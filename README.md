@@ -8,59 +8,7 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
 
 ## Architecture
 
-```
-┌──────────────┐   JSON-RPC 2.0     ┌────────────────────────────────────┐
-│  RPC Client  │ ──────────────────▶ │  JanusDBG Backend                  │
-│ (IDE/Plugin)  │ ◀────────────────── │  ┌──────────────────────────────┐ │
-└──────────────┘    TCP :8179        │  │  main.sage (entry)           │ │
-                                      │  │  - argparse                  │ │
-                                      │  │  - create logger             │ │
-                                      │  │  - create session mgr        │ │
-                                      │  │  - register sessions         │ │
-                                      │  │  - start RPC server          │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                       │  │  rpc/server.sage             │ │
-                                       │  │  - JSON-RPC 2.0 dispatcher   │ │
-                                       │  │  - session & debug methods   │ │
-                                       │  │  - batch request support     │ │
-                                       │  │  - sync method routing       │ │
-                                       │  └──────────────────────────────┘ │
-                                       │                                    │
-                                       │  ┌──────────────────────────────┐ │
-                                       │  │  sync/engine.sage            │ │
-                                       │  │  - cross-session coordination│ │
-                                       │  │  - sequential multi-session  │ │
-                                       │  │  - breakpoint tracking       │ │
-                                       │  │  - merged state collection   │ │
-                                       │  └──────────────────────────────┘ │
-                                       │                                    │
-                                       │  ┌──────────────────────────────┐ │
-                                       │  │  session/session.sage        │ │
-                                      │  │  - session lifecycle         │ │
-                                      │  │  - adapter creation & mgmt   │ │
-                                      │  │  - register/connect/disconnect│ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  adapters/gdb_mi.sage        │ │
-                                      │  │  - ARM GDB/MI via TCP        │ │
-                                      │  │  - (gdb) prompt detection    │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  adapters/openocd.sage       │ │
-                                      │  │  - RISC-V OpenOCD via TCP    │ │
-                                      │  │  - raw Tcl command protocol  │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  lib/log.sage                │ │
-                                      │  │  lib/json.sage               │ │
-                                      │  └──────────────────────────────┘ │
-                                      └────────────────────────────────────┘
-```
+![JanusDBG Architecture](assets/graphic00.png)
 
 ### Current Features (Implemented)
 
