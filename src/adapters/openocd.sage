@@ -1,5 +1,6 @@
 ## OpenOCD adapter for RISC-V debugging.
 ## Communicates via OpenOCD's Tcl server (port 6666 by default).
+from tcp import connect as tcp_connect, sendall, recvline, close as tcp_close
 from lib.log import debug, info, warn, error
 
 class OpenOCDAdapter:
@@ -8,22 +9,32 @@ class OpenOCDAdapter:
         self.host = host
         self.port = port
         self.logger = logger
-        self.connected = false
+        self.fd = -1
 
     ## Connect to the OpenOCD Tcl server.
     proc connect(self):
         info(self.logger, "OpenOCD connecting to " + self.host + ":" + str(self.port))
-        self.connected = true
+        self.fd = tcp_connect(self.host, self.port)
+        if self.fd < 0:
+            raise "Failed to connect to OpenOCD at " + self.host + ":" + str(self.port)
+        info(self.logger, "OpenOCD connected")
 
     ## Disconnect from the OpenOCD Tcl server.
     proc disconnect(self):
-        self.connected = false
+        if self.fd >= 0:
+            tcp_close(self.fd)
+            self.fd = -1
+            info(self.logger, "OpenOCD disconnected")
 
     ## Send a raw Tcl command and return the response.
     proc send_tcl(self, cmd: String):
-        if not self.connected:
+        if self.fd < 0:
             raise "OpenOCD not connected"
-        return ""
+        sendall(self.fd, cmd + "\n")
+        let response = recvline(self.fd, 65536)
+        if response == nil:
+            return ""
+        return response
 
     ## Halt the target core.
     proc halt(self):

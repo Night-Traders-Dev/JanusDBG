@@ -26,7 +26,7 @@ Two-layer build orchestration for JanusDBG. `sagemake` is the primary build orch
 
 Verifies:
 - All `.sage` source files compile without errors
-- All 15 tests pass
+- All 21 tests pass
 
 ### Build
 
@@ -126,20 +126,37 @@ Creates a self-contained C launcher stub that embeds the bundled script and invo
 ```c
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
-static const char BUNDLE[] = "...";  // the bundled .sage content
+static const char BUNDLE[] =
+    "## --- BEGIN lib/log.sage\n"
+    ...
+    "## --- END src/main.sage\n";
 
 int main() {
-    // Write BUNDLE to temp file
-    // Fork/exec: sage <tempfile>
-    return 0;
+    char tmp[] = "/tmp/janusdbg_bundle_XXXXXX";
+    int fd = mkstemp(tmp);
+    write(fd, BUNDLE, strlen(BUNDLE));
+    close(fd);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("sage", "sage", tmp, NULL);
+        exit(1);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    unlink(tmp);
+    return WEXITSTATUS(status);
 }
 ```
 
 ### Limitations
 
 - The binary is not standalone — it requires `sage` (the SageLang interpreter) on `$PATH` at runtime
-- This is because native module calls (`tcp`, `json`, `sys`) cannot be compiled to C/LLVM by the SageLang backend
+- This is because native module calls (`tcp`) cannot be compiled to C/LLVM by the SageLang backend
 
 ## Cross-Compilation
 
@@ -149,7 +166,7 @@ Cross-compilers used:
 |--------|-----------|--------|
 | x86 (32-bit) | `i686-linux-gnu-gcc` | system package |
 | x86\_64 | `gcc` | native |
-| ARM 32-bit | `arm-linux-gnueabihf-gcc` | system package |
+| ARM 32-bit | `arm-linux-gnueabi-gcc` | system package |
 | ARM 64-bit | `aarch64-linux-gnu-gcc` | system package |
 | RISC-V 64-bit | `riscv64-linux-gnu-gcc` | system package |
 | RISC-V 32-bit | (falls back to native gcc) | not available |
@@ -172,5 +189,6 @@ build/
 ## Codegen Considerations
 
 - `sagemake` runs `check` (tests + lint) before every build — prevents codegen from running on broken source
-- Bundle tool must handle recursive imports and deduplication correctly for the backend to see a flat module namespace
+- Bundle tool handles recursive imports and deduplication correctly for the backend to see a flat module namespace
 - Deploy tool generates C code — must be valid C89/C99 for cross-compiler compatibility
+- Adapter imports (`src.adapters.gdb_mi`, `src.adapters.openocd`) are included via the bundle's transitive dependency through `src/session/session.sage`

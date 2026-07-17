@@ -18,23 +18,53 @@ Tests are run by the build system before and after every build operation.
 
 ## Test Summary
 
-| # | Test Name | Module | What It Checks |
-|---|-----------|--------|----------------|
-| 1 | `log: create_logger` | lib.log | Logger creation, name/level fields, non-nil |
-| 2 | `log: level constants` | lib.log | Correct level values (0–4) |
-| 3 | `log: all functions no crash` | lib.log | All five level functions execute, debug suppressed |
-| 4 | `session: create` | session | Non-nil manager, initial state `"disconnected"` |
-| 5 | `session: register` | session | Session exists, target matches, connected is false |
-| 6 | `session: register multiple` | session | Multiple sessions registered, count=2 |
-| 7 | `session: connect` | session | Connect flips connected to true |
-| 8 | `session: disconnect` | session | Connect/disconnect round-trip |
-| 9 | `gdb_mi: create` | gdb_mi | Adapter creation, connected starts false |
-| 10 | `gdb_mi: methods` | gdb_mi | All GDB methods execute without crash |
-| 11 | `openocd: create` | openocd | Adapter creation, connected starts false |
-| 12 | `openocd: methods` | openocd | All OpenOCD methods execute without crash |
-| 13 | `rpc: basic request` | rpc | `getSessions` returns valid JSON-RPC 2.0 response |
-| 14 | `rpc: connect` | rpc | `connect("arm")` returns `result: "connected"` |
-| 15 | `rpc: unknown method` | rpc | Unknown method returns error `-32601` |
+21 tests total, covering 5 modules:
+
+### lib.log (3 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_log_create` | Logger creation, name/level fields, non-nil |
+| `test_log_levels` | Correct level values (0–4) |
+| `test_log_no_crash` | All five level functions execute, debug suppressed at INFO |
+
+### session (7 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_session_create` | Non-nil manager, initial state `"disconnected"` |
+| `test_session_register` | Session exists, target/adapter_type match, connected is false |
+| `test_session_multiple` | Multiple sessions registered, count=2 |
+| `test_session_connect_attempt` | Connect without TCP target raises (try/catch) |
+| `test_session_disconnect_cleanup` | Disconnect on unconnected session is safe (no crash) |
+| `test_session_get_adapter_unknown` | `sm_get_adapter` raises for nonexistent session |
+| `test_session_get_adapter_not_connected` | `sm_get_adapter` raises when session not connected |
+
+### gdb_mi (2 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_gdb_create` | Adapter creation, `fd` starts at -1 |
+| `test_gdb_methods_raise_not_connected` | All 5 methods raise `"GDB not connected"` |
+
+### openocd (2 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_ocd_create` | Adapter creation, `fd` starts at -1 |
+| `test_ocd_methods_raise_not_connected` | All 5 methods raise `"OpenOCD not connected"` |
+
+### rpc (7 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_rpc_request` | `getSessions` returns valid JSON-RPC 2.0 response |
+| `test_rpc_unknown_method` | Unknown method returns error code `-32601` |
+| `test_rpc_halt_not_connected` | `halt` without connect returns error `-32000` |
+| `test_rpc_resume_not_connected` | `resume` without connect returns error |
+| `test_rpc_step_not_connected` | `step` without connect returns error |
+| `test_rpc_set_breakpoint_not_connected` | `setBreakpoint` without connect returns error |
+| `test_rpc_read_registers_not_connected` | `readRegisters` without connect returns error |
 
 ## Framework
 
@@ -54,20 +84,7 @@ Uses `std.testing` with the following API:
 
 - Each test is self-contained with its own logger and manager instances
 - Tests import modules inline (inside the test procedure) to ensure fresh state
-- Adapter tests manually set `connected = true` to test methods without requiring actual connections
-- All 15 tests pass (`./sagemake check` runs tests before build)
-
-## Usage Example
-
-```python
-from std.testing import create_suite, add_test, run, report, assert_equal
-
-let suite = create_suite("My Tests")
-
-proc test_foo():
-    assert_equal(1, 1, "one should equal one")
-
-add_test(suite, "test foo", test_foo)
-run(suite)
-report(suite)
-```
+- Adapter methods raise when not connected — tests use `try/catch` to verify error messages
+- Session connect tests attempt real TCP connection on `localhost:1` (expected to fail) and catch the exception
+- RPC error tests verify proper JSON-RPC error codes (`-32000` for application errors, `-32601` for unknown methods)
+- All 21 tests pass (`./sagemake check` runs tests before and after every build)

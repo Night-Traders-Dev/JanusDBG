@@ -35,8 +35,8 @@ proc main():
     info(logger, "RISC-V target: " + rv_host)
     info(logger, "RPC server port: " + str(rpc_port))
 
-    sm_register(sm, "arm", arm_host)
-    sm_register(sm, "rv", rv_host)
+    sm_register(sm, "arm", arm_host, "gdb_mi")
+    sm_register(sm, "rv", rv_host, "openocd")
 
     start_server(rpc_port, sm, logger)
     info(logger, "JanusDBG shutting down")

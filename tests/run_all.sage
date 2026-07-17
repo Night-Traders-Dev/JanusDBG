@@ -27,7 +27,6 @@ add_test(suite, "log: level constants", test_log_levels)
 proc test_log_no_crash():
     from lib.log import create_logger, debug, info, warn, error, fatal
     let logger = create_logger("test", 1)
-    ## These should not crash regardless of level
     info(logger, "info test")
     warn(logger, "warn test")
     error(logger, "error test")
@@ -54,11 +53,12 @@ proc test_session_register():
     from src.session.session import create_session_manager, sm_register, sm_get_sessions
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "localhost:2331")
+    sm_register(sm, "arm", "localhost:2331", "gdb_mi")
     let sessions = sm_get_sessions(sm)
     assert_true(dict_has(sessions, "arm"), "arm session should exist")
     let arm = sessions["arm"]
     assert_equal(arm["target"], "localhost:2331", "target should match")
+    assert_equal(arm["adapter_type"], "gdb_mi", "adapter type should match")
     assert_equal(arm["connected"], false, "should start disconnected")
 
 add_test(suite, "session: register", test_session_register)
@@ -68,37 +68,70 @@ proc test_session_multiple():
     from src.session.session import create_session_manager, sm_register, sm_get_sessions
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "host1:2331")
-    sm_register(sm, "rv", "host2:3333")
+    sm_register(sm, "arm", "host1:2331", "gdb_mi")
+    sm_register(sm, "rv", "host2:3333", "openocd")
     let sessions = sm_get_sessions(sm)
     assert_equal(len(sessions), 2, "should have 2 sessions")
 
 add_test(suite, "session: register multiple", test_session_multiple)
 
-proc test_session_connect():
+proc test_session_connect_attempt():
     from lib.log import create_logger
-    from src.session.session import create_session_manager, sm_register, sm_connect, sm_get_sessions
+    from src.session.session import create_session_manager, sm_register, sm_connect
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "localhost:2331")
-    sm_connect(sm, "arm")
-    let arm = sm_get_sessions(sm)["arm"]
-    assert_equal(arm["connected"], true, "should be connected")
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+    let caught = false
+    try:
+        sm_connect(sm, "arm")
+    catch e:
+        caught = true
+    assert_true(caught, "connect should fail without GDB target")
 
-add_test(suite, "session: connect", test_session_connect)
+add_test(suite, "session: connect attempt fails", test_session_connect_attempt)
 
-proc test_session_disconnect():
+proc test_session_disconnect_cleanup():
     from lib.log import create_logger
-    from src.session.session import create_session_manager, sm_register, sm_connect, sm_disconnect, sm_get_sessions
+    from src.session.session import create_session_manager, sm_register, sm_disconnect, sm_get_sessions
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "localhost:2331")
-    sm_connect(sm, "arm")
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
     sm_disconnect(sm, "arm")
     let arm = sm_get_sessions(sm)["arm"]
-    assert_equal(arm["connected"], false, "should be disconnected")
+    assert_equal(arm["connected"], false, "should stay disconnected")
+    assert_equal(arm["adapter"], nil, "adapter should be nil")
 
-add_test(suite, "session: disconnect", test_session_disconnect)
+add_test(suite, "session: disconnect no-op when not connected", test_session_disconnect_cleanup)
+
+proc test_session_get_adapter_unknown():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register, sm_get_adapter
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+    let caught = false
+    try:
+        sm_get_adapter(sm, "nonexistent")
+    catch e:
+        caught = true
+    assert_true(caught, "get_adapter should raise for unknown session")
+
+add_test(suite, "session: get_adapter unknown session", test_session_get_adapter_unknown)
+
+proc test_session_get_adapter_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register, sm_get_adapter
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+    let caught = false
+    try:
+        sm_get_adapter(sm, "arm")
+    catch e:
+        caught = true
+    assert_true(caught, "get_adapter should raise when not connected")
+
+add_test(suite, "session: get_adapter not connected", test_session_get_adapter_not_connected)
 
 ## --- GDB/MI adapter tests ---
 
@@ -108,23 +141,57 @@ proc test_gdb_create():
     let logger = create_logger("test", 1)
     let gdb = GDBMIAdapter("localhost", 2331, logger)
     assert_not_equal(gdb, nil, "adapter should not be nil")
-    assert_equal(gdb.connected, false, "should start disconnected")
+    assert_equal(gdb.fd, -1, "fd should start at -1")
 
 add_test(suite, "gdb_mi: create", test_gdb_create)
 
-proc test_gdb_methods():
+proc test_gdb_methods_raise_not_connected():
     from lib.log import create_logger
     from src.adapters.gdb_mi import GDBMIAdapter
     let logger = create_logger("test", 1)
     let gdb = GDBMIAdapter("localhost", 2331, logger)
-    gdb.connected = true
-    let bp = gdb.set_breakpoint("*0x8000")
-    let step = gdb.step()
-    let cnt = gdb.cont()
-    let regs = gdb.read_registers()
-    assert_true(true, "GDB methods should not crash")
 
-add_test(suite, "gdb_mi: methods", test_gdb_methods)
+    let halt_ok = false
+    try:
+        gdb.halt()
+    catch e:
+        if e == "GDB not connected":
+            halt_ok = true
+    assert_true(halt_ok, "halt should raise 'GDB not connected'")
+
+    let cont_ok = false
+    try:
+        gdb.cont()
+    catch e:
+        if e == "GDB not connected":
+            cont_ok = true
+    assert_true(cont_ok, "cont should raise 'GDB not connected'")
+
+    let step_ok = false
+    try:
+        gdb.step()
+    catch e:
+        if e == "GDB not connected":
+            step_ok = true
+    assert_true(step_ok, "step should raise 'GDB not connected'")
+
+    let bp_ok = false
+    try:
+        gdb.set_breakpoint("*0x8000")
+    catch e:
+        if e == "GDB not connected":
+            bp_ok = true
+    assert_true(bp_ok, "set_breakpoint should raise 'GDB not connected'")
+
+    let reg_ok = false
+    try:
+        gdb.read_registers()
+    catch e:
+        if e == "GDB not connected":
+            reg_ok = true
+    assert_true(reg_ok, "read_registers should raise 'GDB not connected'")
+
+add_test(suite, "gdb_mi: methods raise when not connected", test_gdb_methods_raise_not_connected)
 
 ## --- OpenOCD adapter tests ---
 
@@ -134,24 +201,57 @@ proc test_ocd_create():
     let logger = create_logger("test", 1)
     let ocd = OpenOCDAdapter("localhost", 3333, logger)
     assert_not_equal(ocd, nil, "adapter should not be nil")
-    assert_equal(ocd.connected, false, "should start disconnected")
+    assert_equal(ocd.fd, -1, "fd should start at -1")
 
 add_test(suite, "openocd: create", test_ocd_create)
 
-proc test_ocd_methods():
+proc test_ocd_methods_raise_not_connected():
     from lib.log import create_logger
     from src.adapters.openocd import OpenOCDAdapter
     let logger = create_logger("test", 1)
     let ocd = OpenOCDAdapter("localhost", 3333, logger)
-    ocd.connected = true
-    ocd.halt()
-    ocd.resume()
-    ocd.step()
-    ocd.set_breakpoint("0x80000000")
-    ocd.read_reg("pc")
-    assert_true(true, "OpenOCD methods should not crash")
 
-add_test(suite, "openocd: methods", test_ocd_methods)
+    let halt_ok = false
+    try:
+        ocd.halt()
+    catch e:
+        if e == "OpenOCD not connected":
+            halt_ok = true
+    assert_true(halt_ok, "halt should raise 'OpenOCD not connected'")
+
+    let resume_ok = false
+    try:
+        ocd.resume()
+    catch e:
+        if e == "OpenOCD not connected":
+            resume_ok = true
+    assert_true(resume_ok, "resume should raise 'OpenOCD not connected'")
+
+    let step_ok = false
+    try:
+        ocd.step()
+    catch e:
+        if e == "OpenOCD not connected":
+            step_ok = true
+    assert_true(step_ok, "step should raise 'OpenOCD not connected'")
+
+    let bp_ok = false
+    try:
+        ocd.set_breakpoint("0x80000000")
+    catch e:
+        if e == "OpenOCD not connected":
+            bp_ok = true
+    assert_true(bp_ok, "set_breakpoint should raise 'OpenOCD not connected'")
+
+    let reg_ok = false
+    try:
+        ocd.read_reg("pc")
+    catch e:
+        if e == "OpenOCD not connected":
+            reg_ok = true
+    assert_true(reg_ok, "read_reg should raise 'OpenOCD not connected'")
+
+add_test(suite, "openocd: methods raise when not connected", test_ocd_methods_raise_not_connected)
 
 ## --- RPC server tests ---
 
@@ -161,28 +261,13 @@ proc test_rpc_request():
     from src.rpc.server import handle_request
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "localhost:2331")
+    sm_register(sm, "arm", "localhost:2331", "gdb_mi")
 
     let req = {"jsonrpc": "2.0", "method": "getSessions", "id": 1}
     let resp = handle_request(req, sm, logger)
     assert_equal(resp["jsonrpc"], "2.0", "response should be jsonrpc 2.0")
 
 add_test(suite, "rpc: basic request", test_rpc_request)
-
-proc test_rpc_connect():
-    from lib.log import create_logger
-    from src.session.session import create_session_manager, sm_register
-    from src.rpc.server import handle_request
-    let logger = create_logger("test", 1)
-    let sm = create_session_manager(logger)
-    sm_register(sm, "arm", "localhost:2331")
-
-    let req = {"jsonrpc": "2.0", "method": "connect", "params": {"session": "arm"}, "id": 2}
-    let resp = handle_request(req, sm, logger)
-    assert_equal(resp["result"], "connected", "should respond connected")
-    assert_equal(resp["id"], 2, "id should match")
-
-add_test(suite, "rpc: connect", test_rpc_connect)
 
 proc test_rpc_unknown_method():
     from lib.log import create_logger
@@ -196,6 +281,77 @@ proc test_rpc_unknown_method():
     assert_equal(resp["error"]["code"], -32601, "should return method not found error")
 
 add_test(suite, "rpc: unknown method", test_rpc_unknown_method)
+
+proc test_rpc_halt_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.rpc.server import handle_request
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+
+    let req = {"jsonrpc": "2.0", "method": "halt", "params": {"session": "arm"}, "id": 1}
+    let resp = handle_request(req, sm, logger)
+    assert_true(dict_has(resp, "error"), "halt without connect should return error")
+    assert_equal(resp["error"]["code"], -32000, "error code should be -32000")
+
+add_test(suite, "rpc: halt without connect", test_rpc_halt_not_connected)
+
+proc test_rpc_resume_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.rpc.server import handle_request
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+
+    let req = {"jsonrpc": "2.0", "method": "resume", "params": {"session": "arm"}, "id": 2}
+    let resp = handle_request(req, sm, logger)
+    assert_true(dict_has(resp, "error"), "resume without connect should return error")
+
+add_test(suite, "rpc: resume without connect", test_rpc_resume_not_connected)
+
+proc test_rpc_step_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.rpc.server import handle_request
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+
+    let req = {"jsonrpc": "2.0", "method": "step", "params": {"session": "arm"}, "id": 3}
+    let resp = handle_request(req, sm, logger)
+    assert_true(dict_has(resp, "error"), "step without connect should return error")
+
+add_test(suite, "rpc: step without connect", test_rpc_step_not_connected)
+
+proc test_rpc_set_breakpoint_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.rpc.server import handle_request
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+
+    let req = {"jsonrpc": "2.0", "method": "setBreakpoint", "params": {"session": "arm", "addr": "*0x8000"}, "id": 4}
+    let resp = handle_request(req, sm, logger)
+    assert_true(dict_has(resp, "error"), "setBreakpoint without connect should return error")
+
+add_test(suite, "rpc: setBreakpoint without connect", test_rpc_set_breakpoint_not_connected)
+
+proc test_rpc_read_registers_not_connected():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.rpc.server import handle_request
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+
+    let req = {"jsonrpc": "2.0", "method": "readRegisters", "params": {"session": "arm"}, "id": 5}
+    let resp = handle_request(req, sm, logger)
+    assert_true(dict_has(resp, "error"), "readRegisters without connect should return error")
+
+add_test(suite, "rpc: readRegisters without connect", test_rpc_read_registers_not_connected)
 
 run(suite)
 report(suite)

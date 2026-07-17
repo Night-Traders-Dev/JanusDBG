@@ -1,74 +1,65 @@
-# Logger (`lib/log.sage`)
+# Entry Point (`src/main.sage`)
 
 ## Purpose
 
-A minimal, self-contained logger that avoids `std.log` (which uses indirect callbacks not supported by the C/LLVM codegen backends). Supports five log levels with output filtering.
+`src/main.sage` is the entry point for the JanusDBG backend daemon. It parses command-line arguments, initializes the logger and session manager, registers default ARM and RISC-V sessions with their adapter types, and starts the JSON-RPC server.
 
 ## API
 
-### Constants
+### `main()`
 
-`LOG_NAMES = ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"]`
+The main entry procedure. Called at module level inside a `try`/`catch` block.
 
-### `create_logger(name: String, level=1) -> dict`
+**Flow:**
+1. Create an argparse parser named `"janusdbgd"` with description `"Unified ARM+RISC-V debugger backend"`
+2. Register options and flags
+3. Parse args from `sys.args()`
+4. Create a logger at `LOG_INFO` level (or `LOG_DEBUG` if `--verbose`)
+5. Log "JanusDBG starting"
+6. Create a session manager
+7. Register an ARM session with `adapter_type = "gdb_mi"` at the GDB host:port (default `localhost:2331`)
+8. Register a RISC-V session with `adapter_type = "openocd"` at the OpenOCD host:port (default `localhost:3333`)
+9. Start the RPC server on the configured port (default `8179`)
+10. On return, log "JanusDBG shutting down"
 
-Create a logger instance.
+## Command-Line Arguments
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `name` | `String` | — | Logger name (displayed in output) |
-| `level` | `Number` | `1` | Minimum log level (0=DEBUG..4=FATAL) |
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--arm-host` | `-a` | ARM GDB host:port | `localhost:2331` |
+| `--rv-host` | `-r` | RISC-V OpenOCD host:port | `localhost:3333` |
+| `--rpc-port` | `-p` | RPC server port | `8179` |
+| `--verbose` | `-v` | Enable debug-level logging | off |
+| `config` | (positional) | Config file path (optional) | none |
 
-Returns a dict: `{"name": name, "level": level}`
+## Top-Level Error Handling
 
-### Level Functions
-
-Each function checks `logger["level"]` against the threshold before printing:
-
-| Function | Threshold | Level Index | Prefix |
-|----------|-----------|-------------|--------|
-| `debug(logger, msg)` | `level <= 0` | 0 | `[DEBUG]` |
-| `info(logger, msg)` | `level <= 1` | 1 | `[INFO]` |
-| `warn(logger, msg)` | `level <= 2` | 2 | `[WARN]` |
-| `error(logger, msg)` | `level <= 3` | 3 | `[ERROR]` |
-| `fatal(logger, msg)` | `level <= 4` | 4 | `[FATAL]` |
-
-### Output Format
-
+```python
+try:
+    main()
+catch e:
+    print "FATAL: " + e
+    sys_exit(1)
 ```
-[LEVEL] name: message
-```
+
+Any unhandled exception from `main()` is caught, printed with a `FATAL:` prefix, and the process exits with code 1.
 
 ## Internal Design
 
-The logger is a pure-function module with no global state:
+The module is intentionally thin — it wires together components with no business logic of its own. Constants `LOG_DEBUG` (0) and `LOG_INFO` (1) are defined at module level.
 
-- `log_print()` clamps the level index to `[0, 4]` before indexing `LOG_NAMES`
-- Level functions short-circuit: if `logger["level"]` exceeds the threshold, the message is silently dropped
-- Uses `print` (a built-in SageLang keyword) for output — no I/O library dependency
+### Session Registration
+
+Sessions are registered with explicit adapter types reflecting the target architecture:
+- `"arm"` → `adapter_type = "gdb_mi"` (ARM Cortex-A via GDB/MI)
+- `"rv"` → `adapter_type = "openocd"` (RISC-V via OpenOCD Tcl)
 
 ## Codegen Considerations
 
-- No `std.log` import — avoids unsupported callback indirect calls
-- `logger` is a plain dict, not a class instance — compatible with backends that don't support `class`
-- No file I/O or complex formatting
+- All imports use `from ... import` form (backends reject `import foo` without explicit names)
+- `sys_exit` is an alias for `sys.exit` to avoid potential parser issues with dotted names in `except` context
+- Uses `tonumber()` to convert the string option `rpc-port` to a number for the TCP server
 
 ## Test Coverage
 
-Three tests in `tests/run_all.sage`:
-
-| Test | What It Checks |
-|------|----------------|
-| `test_log_create` | Logger creation, name/level fields, non-nil |
-| `test_log_levels` | Correct level values (0–4) |
-| `test_log_no_crash` | All five level functions execute without error, debug suppressed at INFO level |
-
-## Usage Example
-
-```python
-from lib.log import create_logger, info, debug
-
-let logger = create_logger("mymodule", 1)  # INFO level
-info(logger, "Starting up")                # prints: [INFO] mymodule: Starting up
-debug(logger, "detail")                    # suppressed (level 1 > 0)
-```
+No direct tests for `main()` — the module-level `main()` is an integration point exercised indirectly by building and deploying. Component-level tests cover all imported modules.
