@@ -260,13 +260,15 @@ proc test_rpc_request():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:2331", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "getSessions", "id": 1}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_equal(resp["jsonrpc"], "2.0", "response should be jsonrpc 2.0")
 
 add_test(suite, "rpc: basic request", test_rpc_request)
@@ -276,12 +278,14 @@ proc test_rpc_unknown_method():
     from src.session.session import create_session_manager
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "unknownMethod", "id": 3}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_equal(resp["error"]["code"], -32601, "should return method not found error")
 
 add_test(suite, "rpc: unknown method", test_rpc_unknown_method)
@@ -291,13 +295,15 @@ proc test_rpc_halt_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "halt", "params": {"session": "arm"}, "id": 1}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "halt without connect should return error")
     assert_equal(resp["error"]["code"], -32000, "error code should be -32000")
 
@@ -308,13 +314,15 @@ proc test_rpc_resume_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "resume", "params": {"session": "arm"}, "id": 2}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "resume without connect should return error")
 
 add_test(suite, "rpc: resume without connect", test_rpc_resume_not_connected)
@@ -324,13 +332,15 @@ proc test_rpc_step_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "step", "params": {"session": "arm"}, "id": 3}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "step without connect should return error")
 
 add_test(suite, "rpc: step without connect", test_rpc_step_not_connected)
@@ -340,13 +350,15 @@ proc test_rpc_set_breakpoint_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "setBreakpoint", "params": {"session": "arm", "addr": "*0x8000"}, "id": 4}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "setBreakpoint without connect should return error")
 
 add_test(suite, "rpc: setBreakpoint without connect", test_rpc_set_breakpoint_not_connected)
@@ -356,13 +368,15 @@ proc test_rpc_read_registers_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "readRegisters", "params": {"session": "arm"}, "id": 5}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "readRegisters without connect should return error")
 
 add_test(suite, "rpc: readRegisters without connect", test_rpc_read_registers_not_connected)
@@ -491,13 +505,15 @@ proc test_rpc_sync_halt_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "syncHalt", "params": {"sessions": ["arm"]}, "id": 1}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "syncHalt without connect should return error")
 
 add_test(suite, "rpc: syncHalt without connect", test_rpc_sync_halt_not_connected)
@@ -507,13 +523,15 @@ proc test_rpc_sync_resume_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "syncResume", "params": {"sessions": ["arm"]}, "id": 2}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "syncResume without connect should return error")
 
 add_test(suite, "rpc: syncResume without connect", test_rpc_sync_resume_not_connected)
@@ -523,13 +541,15 @@ proc test_rpc_sync_step_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "syncStep", "params": {"sessions": ["arm"]}, "id": 3}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "syncStep without connect should return error")
 
 add_test(suite, "rpc: syncStep without connect", test_rpc_sync_step_not_connected)
@@ -539,13 +559,15 @@ proc test_rpc_sync_set_breakpoint_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "syncSetBreakpoint", "params": {"sessions": ["arm"], "addr": "0x8000"}, "id": 4}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "syncSetBreakpoint without connect should return error")
 
 add_test(suite, "rpc: syncSetBreakpoint without connect", test_rpc_sync_set_breakpoint_not_connected)
@@ -555,16 +577,89 @@ proc test_rpc_get_merged_state_not_connected():
     from src.session.session import create_session_manager, sm_register
     from src.sync.engine import create_sync_engine
     from src.rpc.server import handle_request
+    from src.timeline.recorder import create_timeline_recorder
     let logger = create_logger("test", 1)
     let sm = create_session_manager(logger)
     sm_register(sm, "arm", "localhost:1", "gdb_mi")
     let sync_engine = create_sync_engine(sm, logger)
+    let timeline = create_timeline_recorder(logger)
 
     let req = {"jsonrpc": "2.0", "method": "getMergedState", "params": {"sessions": ["arm"]}, "id": 5}
-    let resp = handle_request(req, sm, sync_engine, logger)
+    let resp = handle_request(req, sm, sync_engine, timeline, logger)
     assert_true(dict_has(resp, "error"), "getMergedState without connect should return error")
 
 add_test(suite, "rpc: getMergedState without connect", test_rpc_get_merged_state_not_connected)
+
+## --- timeline recorder tests ---
+
+proc test_timeline_create():
+    from src.timeline.recorder import create_timeline_recorder
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let t = create_timeline_recorder(logger)
+    assert_not_equal(t, nil, "timeline recorder should not be nil")
+    assert_equal(t["recording"], false, "should not be recording initially")
+    assert_equal(t["arm_events"], [], "arm events should start empty")
+    assert_equal(t["rv_events"], [], "rv events should start empty")
+
+add_test(suite, "timeline: create", test_timeline_create)
+
+proc test_timeline_start_stop():
+    from src.timeline.recorder import create_timeline_recorder, start_recording, stop_recording, is_recording
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let t = create_timeline_recorder(logger)
+    assert_equal(is_recording(t), false, "should not be recording before start")
+    start_recording(t)
+    assert_equal(is_recording(t), true, "should be recording after start")
+    let data = stop_recording(t)
+    assert_equal(is_recording(t), false, "should not be recording after stop")
+    assert_true(dict_has(data, "arm"), "stopped data should have arm key")
+    assert_true(dict_has(data, "rv"), "stopped data should have rv key")
+
+add_test(suite, "timeline: start/stop", test_timeline_start_stop)
+
+proc test_timeline_record_event():
+    from src.timeline.recorder import create_timeline_recorder, start_recording, record_event, stop_recording
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let t = create_timeline_recorder(logger)
+    start_recording(t)
+    record_event(t, "arm", "breakpoint", "0x8000", "hit")
+    record_event(t, "rv", "step", "0x9000", "stepped")
+    let data = stop_recording(t)
+    assert_equal(len(data["arm"]), 1, "should have 1 arm event")
+    assert_equal(len(data["rv"]), 1, "should have 1 rv event")
+    assert_equal(data["arm"][0]["event_type"], "breakpoint", "arm event type should match")
+    assert_equal(data["rv"][0]["event_type"], "step", "rv event type should match")
+    assert_equal(data["arm"][0]["pc"], "0x8000", "arm pc should match")
+    assert_equal(data["rv"][0]["pc"], "0x9000", "rv pc should match")
+
+add_test(suite, "timeline: record events", test_timeline_record_event)
+
+proc test_timeline_no_record_when_stopped():
+    from src.timeline.recorder import create_timeline_recorder, start_recording, stop_recording, record_event, get_timeline
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let t = create_timeline_recorder(logger)
+    record_event(t, "arm", "step", "0x8000", "data")
+    let data = get_timeline(t)
+    assert_equal(len(data["arm"]), 0, "should not record events when stopped")
+
+add_test(suite, "timeline: no record when stopped", test_timeline_no_record_when_stopped)
+
+proc test_timeline_clear():
+    from src.timeline.recorder import create_timeline_recorder, start_recording, record_event, clear_timeline, get_timeline
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let t = create_timeline_recorder(logger)
+    start_recording(t)
+    record_event(t, "arm", "step", "0x8000", "data")
+    clear_timeline(t)
+    let data = get_timeline(t)
+    assert_equal(len(data["arm"]), 0, "should be empty after clear")
+
+add_test(suite, "timeline: clear", test_timeline_clear)
 
 run(suite)
 report(suite)

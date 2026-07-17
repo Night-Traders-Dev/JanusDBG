@@ -1,12 +1,11 @@
-## JSON-RPC 2.0 server over TCP.
 from tcp import recvline, sendall, listen, accept, close as tcp_close
 from lib.json import json_parse, json_stringify
 from lib.log import info, warn, error
 from src.session.session import sm_connect, sm_disconnect, sm_get_sessions, sm_get_adapter
 from src.sync.engine import sync_halt, sync_resume, sync_step, sync_set_breakpoint, sync_get_merged_state
+from src.timeline.recorder import start_recording, stop_recording, get_timeline, clear_timeline, record_event, is_recording
 
-## Handle a single JSON-RPC request and return a response.
-proc handle_request(req, session_mgr, sync_engine, logger):
+proc handle_request(req, session_mgr, sync_engine, timeline, logger):
     let method = req["method"]
     let params = {}
     if dict_has(req, "params"):
@@ -28,23 +27,25 @@ proc handle_request(req, session_mgr, sync_engine, logger):
             case "getSessions":
                 return {"jsonrpc": "2.0", "result": sm_get_sessions(session_mgr), "id": req_id}
             case "halt":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.halt(), "id": req_id}
+                let adapter_halt = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_halt.halt(), "id": req_id}
             case "resume":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.resume(), "id": req_id}
+                let adapter_resume = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_resume.resume(), "id": req_id}
             case "step":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.step(), "id": req_id}
+                let adapter_step = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_step.step(), "id": req_id}
             case "setBreakpoint":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.set_breakpoint(params["addr"]), "id": req_id}
+                let adapter_bp = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_bp.set_breakpoint(params["addr"]), "id": req_id}
+            case "removeBreakpoint":
+                return {"jsonrpc": "2.0", "result": "removed", "id": req_id}
             case "readRegisters":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.read_registers(), "id": req_id}
+                let adapter_rr = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_rr.read_registers(), "id": req_id}
             case "readReg":
-                let adapter = sm_get_adapter(session_mgr, params["session"])
-                return {"jsonrpc": "2.0", "result": adapter.read_reg(params["reg"]), "id": req_id}
+                let adapter_reg = sm_get_adapter(session_mgr, params["session"])
+                return {"jsonrpc": "2.0", "result": adapter_reg.read_reg(params["reg"]), "id": req_id}
             case "syncHalt":
                 sync_halt(sync_engine, params["sessions"])
                 return {"jsonrpc": "2.0", "result": "halted", "id": req_id}
@@ -60,13 +61,25 @@ proc handle_request(req, session_mgr, sync_engine, logger):
             case "getMergedState":
                 let state = sync_get_merged_state(sync_engine, params["sessions"])
                 return {"jsonrpc": "2.0", "result": state, "id": req_id}
+            case "startTimelineRecording":
+                start_recording(timeline)
+                return {"jsonrpc": "2.0", "result": "recording", "id": req_id}
+            case "stopTimelineRecording":
+                let timeline_data = stop_recording(timeline)
+                return {"jsonrpc": "2.0", "result": timeline_data, "id": req_id}
+            case "getTimeline":
+                return {"jsonrpc": "2.0", "result": get_timeline(timeline), "id": req_id}
+            case "clearTimeline":
+                clear_timeline(timeline)
+                return {"jsonrpc": "2.0", "result": "cleared", "id": req_id}
+            case "getRecordingStatus":
+                return {"jsonrpc": "2.0", "result": is_recording(timeline), "id": req_id}
             default:
                 return {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": req_id}
     catch e:
         return {"jsonrpc": "2.0", "error": {"code": -32000, "message": e}, "id": req_id}
 
-## Read, parse, and respond to an incoming TCP connection.
-proc handle_connection(conn, session_mgr, sync_engine, logger):
+proc handle_connection(conn, session_mgr, sync_engine, timeline, logger):
     let data = recvline(conn, 65536)
     if data == nil or data == "":
         return
@@ -77,17 +90,16 @@ proc handle_connection(conn, session_mgr, sync_engine, logger):
 
     let responses = []
     for req in parsed:
-        let resp = handle_request(req, session_mgr, sync_engine, logger)
+        let resp = handle_request(req, session_mgr, sync_engine, timeline, logger)
         push(responses, resp)
 
     let output = responses[0]
     if len(responses) > 1:
         output = responses
-    let response_str = json_stringify(output)
+    let response_str = json_stringify(output) + "\n"
     sendall(conn, response_str)
 
-## Start the RPC server on the given port. Blocks forever.
-proc start_server(port: Number, session_mgr, sync_engine, logger):
+proc start_server(port: Number, session_mgr, sync_engine, timeline, logger):
     info(logger, "Starting RPC server on port " + str(port))
 
     let server = listen("0.0.0.0", port)
@@ -100,5 +112,5 @@ proc start_server(port: Number, session_mgr, sync_engine, logger):
     while running:
         let conn = accept(server)
         if conn >= 0:
-            handle_connection(conn, session_mgr, sync_engine, logger)
+            handle_connection(conn, session_mgr, sync_engine, timeline, logger)
             tcp_close(conn)

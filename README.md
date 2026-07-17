@@ -74,14 +74,14 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
 | **Sync Engine** | ✅ | Cross-session halt, resume, step, breakpoint, merged state |
 | **Cross-Core Breakpoints** | ✅ | Set breakpoints on multiple sessions simultaneously |
 | **Synchronized Step/Continue** | ✅ | Sequential multi-session step, halt, resume |
-| **Cross-Compilation** | ✅ | Bundle + C launcher stub for 6 targets (x86, x86_64, arm32, aarch64, rv32, rv64) |
+| **JIT Deployment** | ✅ | Architecture-independent shell launcher via `sage --jit` |
 | **Test Suite** | ✅ | 33 tests covering all modules |
 
 ### Planned Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| **VS Code Extension** | 📋 | Rich UI with debug controls, register views, timeline |
+| **VS Code Extension** | ✅ | Extension with debug adapter, build + install via sagemake |
 | **Performance Timeline** | 📋 | Merged execution events from both cores |
 | **Profiling Aggregator** | 📋 | Flame graphs from hardware counters |
 | **Embedded REPL** | 📋 | SageLang REPL for custom trace scripts |
@@ -153,7 +153,7 @@ Full API reference: [RPC Server](docs/rpc-server.md)
 ```
 JanusDBG/
 ├── Makefile              # Build wrapper
-├── sagemake              # Build orchestrator (SageLang)
+├── sagemake              # Build orchestrator (Python)
 ├── src/
 │   ├── main.sage         # Entry point
 │   ├── rpc/server.sage   # JSON-RPC server (TCP)
@@ -177,9 +177,15 @@ JanusDBG/
 
 ---
 
-## Cross-Compilation & Deployment
+## Deployment
 
-JanusDBG uses native `tcp` module calls that cannot be compiled via SageLang's C/LLVM backends. The deploy strategy creates a C launcher stub that embeds the bundled source and invokes the system `sage` interpreter at runtime.
+JanusDBG uses `sage --jit` for deployment — no C compilation needed. The deploy tool bundles all source into a single file and wraps it in an executable shell script:
+
+1. `tools/bundle.py` inlines all module dependencies into `build/janusdbg_bundle.sage`
+2. `tools/deploy.py` generates a self-contained shell launcher (`build/janusdbgd`) with the bundle embedded
+3. Run `./build/janusdbgd` — it launches `sage --jit` on the bundle
+
+**Prerequisite**: The target system must have the SageLang interpreter (`sage`) on `$PATH`.
 
 See [Deployment](docs/deployment.md) and [Build System](docs/build-system.md) for details.
 
@@ -201,8 +207,8 @@ Component-level documentation is in `docs/`:
 | [GDB/MI Adapter](docs/adapter-gdb-mi.md) | ARM debug adapter, TCP protocol |
 | [OpenOCD Adapter](docs/adapter-openocd.md) | RISC-V debug adapter, Tcl protocol |
 | [Test Suite](docs/test-suite.md) | 21 test coverage map |
-| [Build System](docs/build-system.md) | sagemake/Makefile targets, bundle/deploy |
-| [Deployment](docs/deployment.md) | Cross-compile workflow, C launcher |
+| [Build System](docs/build-system.md) | sagemake/Makefile targets, CI/CD |
+| [Deployment](docs/deployment.md) | JIT launcher workflow, target-independence |
 
 ---
 

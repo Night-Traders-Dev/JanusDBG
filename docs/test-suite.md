@@ -112,3 +112,14 @@ Uses `std.testing` with the following API:
 - Sync engine tests verify all 5 operations raise when sessions are not connected (adapter method error propagation)
 - RPC sync method tests verify JSON-RPC error responses for sync operations on unconnected sessions
 - All 33 tests pass (`./sagemake check` runs tests before and after every build)
+
+## VS Code Extension Build
+
+The VS Code extension at `vscode-extension/` compiles separately via TypeScript:
+
+```bash
+./sagemake build-vscode    # npm install + tsc
+./sagemake install-vscode  # build + vsce package + code --install-extension
+```
+
+These are not part of the automated test suite — run them separately.

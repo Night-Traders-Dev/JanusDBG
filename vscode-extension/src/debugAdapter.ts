@@ -1,23 +1,35 @@
 import * as vscode from 'vscode';
 
+interface DAPMessage {
+    type: string;
+    seq: number;
+}
+
+interface DAPRequest extends DAPMessage {
+    command: string;
+    arguments?: any;
+}
+
+interface DAPResponse extends DAPMessage {
+    request_seq: number;
+    success: boolean;
+    command: string;
+    body?: any;
+}
+
 export class DebugAdapter implements vscode.DebugAdapter {
-    private send: ((message: vscode.DebugProtocolMessage) => void) | undefined;
+    private sendEmitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
+
+    readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.sendEmitter.event;
 
     handleMessage(message: vscode.DebugProtocolMessage): void {
-        const msg = message as vscode.DebugProtocolMessage;
-
-        switch (msg.type) {
-            case 'request':
-                this.handleRequest(msg as vscode.DebugProtocolRequest);
-                break;
-            case 'event':
-                break;
-            case 'response':
-                break;
+        const msg = message as unknown as DAPMessage;
+        if (msg.type === 'request') {
+            this.handleRequest(msg as unknown as DAPRequest);
         }
     }
 
-    private handleRequest(request: vscode.DebugProtocolRequest) {
+    private handleRequest(request: DAPRequest): void {
         switch (request.command) {
             case 'initialize':
                 this.sendResponse(request, {
@@ -36,21 +48,19 @@ export class DebugAdapter implements vscode.DebugAdapter {
         }
     }
 
-    private sendResponse(request: vscode.DebugProtocolRequest, body: any) {
-        if (this.send) {
-            this.send({
-                type: 'response',
-                request_seq: request.seq,
-                success: true,
-                command: request.command,
-                body,
-            } as vscode.DebugProtocolResponse);
-        }
+    private sendResponse(request: DAPRequest, body: any): void {
+        const response: DAPResponse = {
+            type: 'response',
+            seq: 0,
+            request_seq: request.seq,
+            success: true,
+            command: request.command,
+            body,
+        };
+        this.sendEmitter.fire(response as unknown as vscode.DebugProtocolMessage);
     }
 
-    onDidSendMessage(
-        callback: (message: vscode.DebugProtocolMessage) => void
-    ): void {
-        this.send = callback;
+    dispose(): void {
+        this.sendEmitter.dispose();
     }
 }

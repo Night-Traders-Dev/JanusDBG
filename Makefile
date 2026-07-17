@@ -3,7 +3,7 @@
 # Usage:  make <target>    (same as ./sagemake <target>)
 #         make run ARGS="--verbose"
 
-.PHONY: all build check test run install clean
+.PHONY: all build build-all build-vscode install-vscode check test run install clean
 
 all:
 	./sagemake all
@@ -13,6 +13,15 @@ check:
 
 build:
 	./sagemake build
+
+build-all:
+	./sagemake build-all
+
+build-vscode:
+	./sagemake build-vscode
+
+install-vscode:
+	./sagemake install-vscode
 
 test:
 	./sagemake test

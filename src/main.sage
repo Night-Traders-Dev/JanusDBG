@@ -6,6 +6,7 @@ from lib.log import create_logger, info
 from src.rpc.server import start_server
 from src.session.session import create_session_manager, sm_register
 from src.sync.engine import create_sync_engine
+from src.timeline.recorder import create_timeline_recorder
 
 let LOG_DEBUG = 0
 let LOG_INFO = 1
@@ -42,7 +43,10 @@ proc main():
     let sync_engine = create_sync_engine(sm, logger)
     info(logger, "Sync engine created")
 
-    start_server(rpc_port, sm, sync_engine, logger)
+    let timeline = create_timeline_recorder(logger)
+    info(logger, "Timeline recorder created")
+
+    start_server(rpc_port, sm, sync_engine, timeline, logger)
     info(logger, "JanusDBG shutting down")
 
 try:

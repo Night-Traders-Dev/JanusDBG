@@ -52,22 +52,22 @@ proc sm_connect(sm, name: String):
 
 ## Disconnect from a named session.
 proc sm_disconnect(sm, name: String):
-    let sess = sm["sessions"][name]
-    if sess != nil:
-        if sess["adapter"] != nil:
-            sess["adapter"].disconnect()
-            sess["adapter"] = nil
-        sess["connected"] = false
+    let sess_state = sm["sessions"][name]
+    if sess_state != nil:
+        if sess_state["adapter"] != nil:
+            sess_state["adapter"].disconnect()
+            sess_state["adapter"] = nil
+        sess_state["connected"] = false
         info(sm["logger"], "Disconnected " + name)
 
 ## Get the adapter for a named session.
 proc sm_get_adapter(sm, name: String):
-    let sess = sm["sessions"][name]
-    if sess == nil:
+    let found_sess = sm["sessions"][name]
+    if found_sess == nil:
         raise "Unknown session: " + name
-    if sess["adapter"] == nil:
+    if found_sess["adapter"] == nil:
         raise "Session not connected: " + name
-    return sess["adapter"]
+    return found_sess["adapter"]
 
 ## Get all registered sessions and their status.
 proc sm_get_sessions(sm):

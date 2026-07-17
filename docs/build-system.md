@@ -2,21 +2,23 @@
 
 ## Purpose
 
-Two-layer build orchestration for JanusDBG. `sagemake` is the primary build orchestrator written in SageLang; `Makefile` is a convenience wrapper.
+Two-layer build orchestration for JanusDBG. `sagemake` is the primary build orchestrator written in Python; `Makefile` is a convenience wrapper.
 
 ## `sagemake` Targets
 
 | Target | Description |
 |--------|-------------|
-| `check` | Run test suite, verify source syntax |
-| `test` | Run test suite |
-| `build` | Run tests, then build native binary |
-| `build-all` | Run tests, then cross-compile for all 6 targets |
-| `deploy` | Run tests, bundle, and create deployable C stubs |
-| `install` | Copy binary to `PREFIX` (default `/usr/local/bin`) |
-| `run` | Run the built binary with optional `ARGS` |
+| `check` | Lint all `.sage` source files |
+| `test` | Run the 33-test suite |
+| `build` | Run tests, bundle, generate JIT launcher for native target |
+| `build-all` | Run tests, bundle, generate JIT launchers for all 6 target names |
+| `deploy` | Bundle source + generate JIT launcher (no tests) |
+| `build-vscode` | Compile VS Code extension (`npm install` + `tsc`) |
+| `install-vscode` | Build and install VS Code extension via `code --install-extension` |
+| `install` | Copy JIT launcher to `PREFIX` (default `/usr/local/bin`) |
+| `run` | Run the backend in interpreter mode with optional `ARGS` |
 | `clean` | Remove build artifacts |
-| `all` | Default: check → build-all |
+| `all` | Default: check → test → build-all |
 
 ### Check
 
@@ -24,32 +26,38 @@ Two-layer build orchestration for JanusDBG. `sagemake` is the primary build orch
 ./sagemake check
 ```
 
-Verifies:
-- All `.sage` source files compile without errors
-- All 21 tests pass
+Lints all Sage source files using `sage lint`.
 
 ### Build
 
 ```bash
-./sagemake build            # Build for host architecture
-./sagemake build-all        # Cross-compile for all targets
+./sagemake build            # Bundle + JIT launcher for native arch
+./sagemake build-all        # Bundle + JIT launchers for 6 target names
+./sagemake deploy           # Bundle + JIT launcher (no tests)
 ```
 
 Build generates:
-- `build/janusdbgd` — native binary
-- `build/janusdbgd-x86`, `janusdbgd-x86_64`, `janusdbgd-arm`, `janusdbgd-arm64`, `janusdbgd-rv64`, `janusdbgd-rv32` — cross-compiled binaries
+- `build/janusdbg_bundle.sage` — the bundled single-file source
+- `build/janusdbgd_<target>` — executable shell launcher for each target
 
 ### Deploy
 
 ```bash
-./sagemake deploy TARGET=arm
+./sagemake deploy
 ```
 
 Steps:
-1. Run tests
-2. Bundle sources with `tools/bundle.py`
-3. Generate C launcher stub with `tools/deploy.py`
-4. Cross-compile for the specified target
+1. Bundle sources with `tools/bundle.py`
+2. Generate JIT shell launcher with `tools/deploy.py`
+
+### VS Code Extension
+
+```bash
+./sagemake build-vscode       # npm install + tsc
+./sagemake install-vscode     # build-vscode + vsce package + code --install-extension
+```
+
+The VS Code extension is at `vscode-extension/`. It registers debug adapter commands and a JanusDBG debugger type.
 
 ## `Makefile` Targets
 
@@ -59,136 +67,57 @@ Steps:
 | `make check` | `./sagemake check` |
 | `make test` | `./sagemake test` |
 | `make build` | `./sagemake build` |
+| `make build-vscode` | `./sagemake build-vscode` |
+| `make install-vscode` | `./sagemake install-vscode` |
 | `make run ARGS="..."` | `./sagemake run $(ARGS)` |
 | `make install` | `./sagemake install` |
 | `make clean` | `./sagemake clean` |
 
 ## Bundle Tool (`tools/bundle.py`)
 
-### Purpose
-
-Inlines all local module dependencies into a single `.sage` file for deployment.
-
-### Operation
-
-1. Recursively resolves `from ... import` statements
-2. Inlines local module source (replacing import lines with the module body)
-3. Deduplicates stdlib imports (only the import line is kept, not the stdlib source)
-4. Writes a single `__bundle__.sage` file
-
-### Example
-
-Before bundling:
-```python
-# src/main.sage
-from lib.log import create_logger, info
-from std.argparse import create
-
-proc main():
-    let logger = create_logger("test", 1)
-    info(logger, "hello")
-```
-
-After bundling:
-```python
-## --- BEGIN lib/log.sage ---
-proc create_logger(name, level=1):
-    return {"name": name, "level": level}
-proc info(logger, msg):
-    ... (inlined body)
-## --- END lib/log.sage ---
-
-from std.argparse import create
-
-proc main():
-    let logger = create_logger("test", 1)
-    info(logger, "hello")
-```
+Inlines all local module dependencies into a single `.sage` file. See [deployment](deployment.md) for details.
 
 ## Deploy Tool (`tools/deploy.py`)
 
-### Purpose
+Generates a self-contained executable shell script that embeds the bundled source and launches via `sage --jit`. See [deployment](deployment.md) for details.
 
-Creates a self-contained C launcher stub that embeds the bundled script and invokes the SageLang interpreter at runtime.
+## JIT-Based Deployment
 
-### Operation
-
-1. Read the bundle (`__bundle__.sage`)
-2. Generate a C source file (`janusdbgd_launcher.c`):
-   - Embeds the bundle as a string constant
-   - Writes it to a temp file at runtime
-   - Calls `exec()` on the SageLang interpreter with the temp file
-3. Cross-compile the C stub for the specified target
-4. Output: `build/janusdbgd-<target>` (an ELF binary)
-
-### Launcher C Stub Structure
-
-```c
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/wait.h>
-
-static const char BUNDLE[] =
-    "## --- BEGIN lib/log.sage\n"
-    ...
-    "## --- END src/main.sage\n";
-
-int main() {
-    char tmp[] = "/tmp/janusdbg_bundle_XXXXXX";
-    int fd = mkstemp(tmp);
-    write(fd, BUNDLE, strlen(BUNDLE));
-    close(fd);
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        execlp("sage", "sage", tmp, NULL);
-        exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    unlink(tmp);
-    return WEXITSTATUS(status);
-}
-```
-
-### Limitations
-
-- The binary is not standalone — it requires `sage` (the SageLang interpreter) on `$PATH` at runtime
-- This is because native module calls (`tcp`) cannot be compiled to C/LLVM by the SageLang backend
-
-## Cross-Compilation
-
-Cross-compilers used:
-
-| Target | C Compiler | Source |
-|--------|-----------|--------|
-| x86 (32-bit) | `i686-linux-gnu-gcc` | system package |
-| x86\_64 | `gcc` | native |
-| ARM 32-bit | `arm-linux-gnueabi-gcc` | system package |
-| ARM 64-bit | `aarch64-linux-gnu-gcc` | system package |
-| RISC-V 64-bit | `riscv64-linux-gnu-gcc` | system package |
-| RISC-V 32-bit | (falls back to native gcc) | not available |
+JanusDBG uses `sage --jit` instead of C/LLVM compilation because:
+- Native module calls (`tcp`, `sys`) work correctly under `--jit`
+- The C/LLVM backends cannot resolve native module imports at compile time
+- No cross-compilation is needed — the same shell launcher works on any architecture
+- Build time drops from seconds (C compilation) to near-instant (file generation)
 
 ## Output Structure
 
 ```
 build/
-├── __bundle__.sage          # Bundled source
-├── janusdbgd                # Native binary
-├── janusdbgd-x86            # 32-bit x86
-├── janusdbgd-x86_64         # x86_64
-├── janusdbgd-arm            # ARM 32-bit (hard-float)
-├── janusdbgd-arm64          # AArch64
-├── janusdbgd-rv64           # RISC-V 64-bit
-├── janusdbgd-rv32           # RISC-V 32-bit (native fallback)
-└── janusdbgd_launcher.c     # Generated C stub
+├── janusdbg_bundle.sage          # Bundled source (shared by all targets)
+├── janusdbgd_x86                 # JIT launcher for x86
+├── janusdbgd_x86_64              # JIT launcher for x86_64
+├── janusdbgd_rv32                # JIT launcher for RISC-V 32-bit
+├── janusdbgd_rv64                # JIT launcher for RISC-V 64-bit
+├── janusdbgd_arm32               # JIT launcher for ARM 32-bit
+└── janusdbgd_aarch64             # JIT launcher for ARM 64-bit
 ```
 
-## Codegen Considerations
+All launchers are identical shell scripts — the target name is only for the output filename. Each is ~20K and contains the entire application embedded inline.
 
-- `sagemake` runs `check` (tests + lint) before every build — prevents codegen from running on broken source
-- Bundle tool handles recursive imports and deduplication correctly for the backend to see a flat module namespace
-- Deploy tool generates C code — must be valid C89/C99 for cross-compiler compatibility
-- Adapter imports (`src.adapters.gdb_mi`, `src.adapters.openocd`) are included via the bundle's transitive dependency through `src/session/session.sage`
+## Target Independence
+
+Since the launcher is a shell script that invokes `sage --jit`, it is architecture-independent. The same `janusdbgd` script runs on any platform with `bash` and `sage` installed:
+
+```bash
+# All of these use the same launcher content:
+./build/janusdbgd_x86_64              # Native x86_64
+./build/janusdbgd_aarch64             # ARM 64-bit (with qemu-aarch64 + sage)
+./build/janusdbgd_rv64                # RISC-V 64-bit (with qemu-riscv64 + sage)
+```
+
+## Prerequisites
+
+- **SageLang interpreter** — `deps/SageLang/sage` (v4.0.8+)
+- **bash** — for running the JIT launcher
+- **gcc** — only needed if building the SageLang interpreter from source
+- **Node.js + npm** — only needed for VS Code extension targets

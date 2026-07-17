@@ -8,15 +8,17 @@ Usage:
     ./sagemake [command] [flags]
 
 Commands:
-    build      Deploy binary for native arch
-    build-all  Deploy binaries for all 6 targets (x86, x86_64, rv32, rv64, arm32, aarch64)
-    check      Lint all Sage source files
-    test       Run the test suite
-    run        Run the backend in interpreter mode
-    install    Install built artifact
-    clean      Remove build artifacts
-    deploy     Build deploy bundle only (no cross-compile)
-    all        Run check → test → deploy
+    build           Generate JIT launcher for native target
+    build-all       Generate JIT launchers for all targets
+    build-vscode    Compile the VS Code extension (npm install + tsc)
+    install-vscode  Build and install VS Code extension via code CLI
+    check           Lint all Sage source files
+    test            Run the test suite
+    run             Run the backend in interpreter mode
+    install         Install built artifact
+    clean           Remove build artifacts
+    deploy          Build deploy bundle + JIT launcher
+    all             Run check, test, then build
 """
 
 import os
@@ -24,7 +26,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 RESET = "\033[0m"
@@ -40,24 +41,10 @@ SRC_DIR = ROOT / "src"
 LIB_DIR = ROOT / "lib"
 TEST_DIR = ROOT / "tests"
 BUILD_DIR = ROOT / "build"
+VSCODE_DIR = ROOT / "vscode-extension"
 BINARY_NAME = "janusdbgd"
 
-CROSS_TARGETS = {
-    "x86":      "i686-linux-gnu-gcc",
-    "x86_64":   "gcc",
-    "rv32":     "riscv32-linux-gnu-gcc",
-    "rv64":     "riscv64-linux-gnu-gcc",
-    "arm32":    "arm-linux-gnueabi-gcc",
-    "aarch64":  "aarch64-linux-gnu-gcc",
-}
-
-# Alias maps
-TARGET_ALIASES = {
-    "amd64": "x86_64", "i386": "x86", "i686": "x86",
-    "riscv32": "rv32", "riscv64": "rv64",
-    "arm": "arm32", "armhf": "arm32",
-    "arm64": "aarch64",
-}
+ALL_TARGETS = ["x86", "x86_64", "rv32", "rv64", "arm32", "aarch64"]
 
 
 def banner(title: str) -> None:
@@ -113,14 +100,13 @@ def sage_source_files() -> list[Path]:
 
 def cmd_check(args: list[str]) -> None:
     banner("check — JanusDBG")
+    sage_bin = str(SAGE) if SAGE.exists() else shutil.which("sage")
+    if not sage_bin:
+        step_warn("sage interpreter not found — skipping lint")
+        return
     section("Linting source files")
     files = sage_source_files()
     errors = 0
-    has_sage_lint = shutil.which("sage-lint") or SAGE.exists()
-    if not has_sage_lint:
-        step_warn("sage interpreter not found — skipping lint")
-        return
-    sage_bin = str(SAGE) if SAGE.exists() else "sage"
     for f in files:
         rel = f.relative_to(ROOT)
         step(f"linting {rel}")
@@ -153,17 +139,17 @@ def cmd_test(args: list[str]) -> None:
 
 
 def cmd_deploy(args: list[str]) -> None:
-    """Build the deploy bundle only (no cross-compile)."""
+    """Build the deploy bundle + JIT launcher for native target."""
     banner("deploy — JanusDBG")
-    section("Generating bundle")
-    step("bundling source modules")
     deploy_script = ROOT / "tools" / "deploy.py"
     if not deploy_script.exists():
         step_fail("tools/deploy.py not found")
-    env = os.environ.copy()
+    section("Generating JIT launcher")
+    target = args[0] if args else "native"
+    step("bundling and generating launcher")
     result = subprocess.run(
-        [sys.executable, str(deploy_script), "x86_64"],  # just generates bundle
-        capture_output=True, text=True, env=env, cwd=ROOT,
+        [sys.executable, str(deploy_script), target],
+        capture_output=True, text=True, cwd=ROOT,
     )
     if result.returncode != 0:
         print(result.stderr)
@@ -171,108 +157,59 @@ def cmd_deploy(args: list[str]) -> None:
     for line in result.stdout.splitlines():
         if "Output:" in line or "Bundled:" in line:
             step_ok(line.strip())
-    step_ok("deploy bundle ready")
+    step_ok("JIT launcher ready")
 
 
 def cmd_build(args: list[str]) -> None:
-    """Build for native architecture or a specific target."""
+    """Build JIT launcher for native architecture or a specific target."""
     banner("build — JanusDBG")
+    target = args[0] if args else platform.machine()
+    # Normalise arch names
+    arch_map = {"x86_64": "x86_64", "aarch64": "aarch64", "armv7l": "arm32",
+                "i686": "x86", "i386": "x86", "riscv64": "rv64", "riscv32": "rv32"}
+    target = arch_map.get(target, target)
 
-    # Determine target
-    target = "x86_64"
-    if args:
-        t = args[0]
-        target = TARGET_ALIASES.get(t, t)
-
-    # Run tests first
     try:
         cmd_test([])
     except SystemExit:
         step_fail("tests must pass before build")
 
-    section(f"Building for {target}")
-    deploy_script = ROOT / "tools" / "deploy.py"
-    if not deploy_script.exists():
-        step_fail("tools/deploy.py not found")
+    cmd_deploy([target])
 
-    # Check cross-compiler availability
-    cc = shutil.which(CROSS_TARGETS.get(target, "gcc"))
-    if not cc:
-        cc = shutil.which("gcc")
-        if cc:
-            step_warn(f"cross-compiler '{CROSS_TARGETS.get(target, '?')}' not found, using native gcc")
-        else:
-            step_fail(f"no C compiler found for target '{target}'")
-
-    step("deploying")
-    result = subprocess.run(
-        [sys.executable, str(deploy_script), target],
-        capture_output=True, text=True, cwd=ROOT,
-    )
-    if result.returncode != 0:
-        print(result.stderr)
-        step_fail(f"build failed for {target}")
-    for line in result.stdout.splitlines():
-        if "Output:" in line or "Warning:" in line or "Bundled:" in line:
-            print(f"    {line.strip()}")
-
-    # Run tests after build too
     try:
         cmd_test([])
     except SystemExit:
         step_fail("tests must pass after build")
 
-    step_ok(f"{BINARY_NAME} built for {target}")
+    step_ok(f"{BINARY_NAME} ready for {target}")
 
 
 def cmd_build_all(args: list[str]) -> None:
-    """Build for all 6 targets."""
+    """Build JIT launchers for all targets."""
     banner("build-all — JanusDBG")
 
-    # Run tests first
     try:
         cmd_test([])
     except SystemExit:
         step_fail("tests must pass before build")
 
-    env = os.environ.copy()
-    deploy_script = ROOT / "tools" / "deploy.py"
-
     successes = []
     failures = []
 
-    for target, cc_name in CROSS_TARGETS.items():
-        section(f"Building for {target} ({cc_name})")
-        cc = shutil.which(cc_name)
-        if not cc:
-            cc = shutil.which("gcc")
-            if cc:
-                step_warn(f"cross-compiler '{cc_name}' not found, using native gcc")
-            else:
-                step_warn(f"no C compiler found for {target}")
-                failures.append(target)
-                continue
-
-        step("deploying")
-        result = subprocess.run(
-            [sys.executable, str(deploy_script), target],
-            capture_output=True, text=True, cwd=ROOT,
-        )
-        if result.returncode != 0:
+    for target in ALL_TARGETS:
+        section(f"Building for {target}")
+        try:
+            cmd_deploy([target])
+            successes.append(target)
+        except SystemExit:
             step_warn(f"build failed for {target}")
             failures.append(target)
-        else:
-            for line in result.stdout.splitlines():
-                if "Output:" in line or "Bundled:" in line:
-                    print(f"    {line.strip()}")
-            successes.append(target)
 
     print()
     print(f"  {GREEN}{len(successes)} targets succeeded{RESET}: {', '.join(successes)}")
     if failures:
         print(f"  {RED}{len(failures)} targets failed{RESET}: {', '.join(failures)}")
 
-    # Run tests after build
     try:
         cmd_test([])
     except SystemExit:
@@ -291,23 +228,23 @@ def cmd_run(args: list[str]) -> None:
     if not SAGE.exists():
         step_fail("sage interpreter not built — run make -C deps/SageLang first")
     cmd = [str(SAGE), str(SRC_DIR / "main.sage")] + args
+    print(f"  Command: {' '.join(cmd)}")
     run_cmd(cmd, env=env)
 
 
 def cmd_install(args: list[str]) -> None:
-    """Install deploy binary to /usr/local/bin."""
+    """Install JIT launcher to /usr/local/bin."""
     banner("install — JanusDBG")
     install_dir = Path("/usr/local/bin")
-    # Determine which binary to install
-    target = args[0] if args else "x86_64"
-    binary = BUILD_DIR / f"{BINARY_NAME}_{target}"
-    if not binary.exists():
-        step_fail(f"{binary.name} not built — run build {target} first")
+    target = args[0] if args else "native"
+    launcher = BUILD_DIR / f"{BINARY_NAME}_{target}"
+    if not launcher.exists():
+        step_fail(f"{launcher.name} not built — run build first")
     dest = install_dir / BINARY_NAME
     step(f"installing to {dest}")
     try:
         install_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binary, dest)
+        shutil.copy2(launcher, dest)
         dest.chmod(0o755)
     except PermissionError:
         step_fail(f"permission denied (try sudo)")
@@ -323,15 +260,73 @@ def cmd_clean(args: list[str]) -> None:
     ok()
 
 
+def cmd_build_vscode(args: list[str]) -> None:
+    """Compile the VS Code extension (npm install + tsc)."""
+    banner("build-vscode — JanusDBG")
+    if not VSCODE_DIR.exists():
+        step_fail("vscode-extension/ directory not found")
+    section("Installing npm dependencies")
+    step("npm install")
+    run_cmd(["npm", "install", "--no-audit", "--no-fund"], cwd=VSCODE_DIR)
+    ok()
+    section("Compiling TypeScript")
+    step("tsc")
+    run_cmd(["npx", "tsc", "-p", "./"], cwd=VSCODE_DIR)
+    ok()
+    step_ok("VS Code extension compiled")
+
+
+def cmd_install_vscode(args: list[str]) -> None:
+    """Build and install the VS Code extension via code CLI."""
+    banner("install-vscode — JanusDBG")
+
+    if not VSCODE_DIR.exists():
+        step_fail("vscode-extension/ directory not found")
+
+    # Build first
+    try:
+        cmd_build_vscode(args)
+    except SystemExit:
+        step_fail("VS Code extension build failed")
+
+    section("Packaging extension")
+    vsix_path = VSCODE_DIR / "janusdbg.vsix"
+
+    # Check for vsce
+    vsce = shutil.which("vsce") or shutil.which("npx")
+    if not vsce:
+        step_warn("vsce not found — trying npx vsce")
+        vsce = "npx"
+
+    step("vsce package")
+    if vsce.endswith("npx"):
+        run_cmd(["npx", "-y", "@vscode/vsce", "package", "-o", str(vsix_path)], cwd=VSCODE_DIR)
+    else:
+        run_cmd(["vsce", "package", "-o", str(vsix_path)], cwd=VSCODE_DIR)
+    ok()
+
+    section("Installing extension")
+    code_cli = shutil.which("code")
+    if not code_cli:
+        step_warn("code CLI not found — extension packaged but not installed")
+        step_ok(f"VSIX at {vsix_path}")
+        return
+
+    step("code --install-extension")
+    run_cmd([code_cli, "--install-extension", str(vsix_path)])
+    ok()
+    step_ok("VS Code extension installed")
+
+
 def cmd_all(args: list[str]) -> None:
     cmd_check(args)
     cmd_test(args)
-    cmd_deploy(args)
+    cmd_build_all(args)
 
 
 def check_dependencies() -> None:
     section("Dependencies")
-    required = ["gcc"]
+    required = []
     missing = []
     for dep in required:
         step(f"checking {dep}")
@@ -351,6 +346,8 @@ def main() -> None:
     commands: dict[str, callable] = {
         "build": cmd_build,
         "build-all": cmd_build_all,
+        "build-vscode": cmd_build_vscode,
+        "install-vscode": cmd_install_vscode,
         "deploy": cmd_deploy,
         "check": cmd_check,
         "test": cmd_test,
