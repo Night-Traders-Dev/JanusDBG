@@ -1,0 +1,82 @@
+{
+  "name": "janusdbg",
+  "version": "0.1.0",
+  "description": "Unified debugging and profiling for heterogeneous ARM + RISC-V SoCs",
+  "main": "./out/extension.js",
+  "publisher": "Night-Traders-Dev",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:janusdbg.start",
+    "onDebug"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "janusdbg.start",
+        "title": "JanusDBG: Start Backend"
+      },
+      {
+        "command": "janusdbg.attachARM",
+        "title": "JanusDBG: Attach to ARM"
+      },
+      {
+        "command": "janusdbg.attachRV",
+        "title": "JanusDBG: Attach to RISC-V"
+      },
+      {
+        "command": "janusdbg.setCrossBreakpoint",
+        "title": "JanusDBG: Set Cross Breakpoint"
+      },
+      {
+        "command": "janusdbg.recordTimeline",
+        "title": "JanusDBG: Record Timeline"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "janusdbg",
+        "label": "JanusDBG",
+        "program": "./out/debugAdapter.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "required": ["armTarget", "rvTarget"],
+            "properties": {
+              "armTarget": {
+                "type": "string",
+                "description": "ARM GDB target (host:port)"
+              },
+              "rvTarget": {
+                "type": "string",
+                "description": "RISC-V OpenOCD target (host:port)"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "janusdbg",
+            "request": "launch",
+            "name": "JanusDBG: Attach to ARM + RISC-V",
+            "armTarget": "localhost:2331",
+            "rvTarget": "localhost:3333"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

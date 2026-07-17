@@ -1,1 +1,7 @@
 .secret
+build/
+janusdbgd
+vscode-extension/out/
+vscode-extension/node_modules/
+*.spv
+*.o

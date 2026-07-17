@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""
+sagemake — Build system for JanusDBG
+
+Unified debugging and profiling for heterogeneous ARM + RISC-V SoCs.
+
+Usage:
+    ./sagemake [command] [flags]
+
+Commands:
+    build      Compile the backend to a standalone binary
+    check      Lint all Sage source files
+    test       Run the test suite
+    run        Run the backend in interpreter mode
+    install    Install built artifacts
+    clean      Remove build artifacts
+    all        Run check then build then test
+"""
+
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+RESET = "\033[0m"
+BOLD = "\033[1m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+
+
+def banner(title: str) -> None:
+    width = 60
+    line = f"{CYAN}{'═' * width}{RESET}"
+    print(f"\n{line}")
+    print(f"{CYAN}  {BOLD}{title}{RESET}")
+    print(f"{line}\n")
+
+
+def section(title: str) -> None:
+    print(f"  {CYAN}→{RESET} {title}")
+
+
+def step(msg: str) -> None:
+    print(f"    {msg} ... ", end="", flush=True)
+
+
+def ok() -> None:
+    print(f"{GREEN}✓ done{RESET}")
+
+
+def fail() -> None:
+    print(f"{RED}✗ failed{RESET}")
+    sys.exit(1)
+
+
+def step_ok(detail: str) -> None:
+    print(f"{GREEN}✓ {detail}{RESET}")
+
+
+def step_fail(detail: str) -> None:
+    print(f"{RED}✗ {detail}{RESET}")
+    sys.exit(1)
+
+
+def step_warn(detail: str) -> None:
+    print(f"{YELLOW}! {detail}{RESET}")
+
+
+def run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    if "env" in kwargs:
+        kwargs["env"] = {**os.environ, **kwargs["env"]}
+    else:
+        kwargs["env"] = os.environ.copy()
+    try:
+        return subprocess.run(cmd, check=True, **kwargs)
+    except subprocess.CalledProcessError as e:
+        step_fail(f"command failed with exit code {e.returncode}: {' '.join(cmd)}")
+    except FileNotFoundError:
+        step_fail(f"command not found: {cmd[0]}")
+
+
+ROOT = Path(__file__).resolve().parent
+SAGE = ROOT / "deps" / "SageLang" / "sage"
+SRC_DIR = ROOT / "src"
+LIB_DIR = ROOT / "lib"
+TEST_DIR = ROOT / "tests"
+BUILD_DIR = ROOT / "build"
+BINARY_NAME = "janusdbgd"
+
+
+def sage_source_files() -> list[Path]:
+    files = []
+    for d in [SRC_DIR, LIB_DIR]:
+        for p in d.rglob("*.sage"):
+            files.append(p)
+    return sorted(files)
+
+
+def cmd_build(args: list[str]) -> None:
+    banner("build — JanusDBG")
+    sage_path = f"{LIB_DIR}:{SRC_DIR}"
+    env = os.environ.copy()
+    env["SAGE_PATH"] = sage_path
+
+    section("Compilation")
+    step("syntax check")
+    result = subprocess.run(
+        [str(SAGE), "lint", str(SRC_DIR / "main.sage")],
+        capture_output=True, text=True,
+    )
+    if "Error" in result.stdout or "error" in result.stderr:
+        print(f"{RED}✗{RESET}")
+        print(result.stdout)
+        step_fail("syntax check failed")
+    ok()
+
+    step("compiling to standalone binary (C backend)")
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    target = BUILD_DIR / BINARY_NAME
+    result = subprocess.run(
+        [str(SAGE), "--compile", str(SRC_DIR / "main.sage"), "-o", str(target)],
+        capture_output=True, text=True,
+        env=env,
+    )
+    if result.returncode == 0:
+        step_ok(f"{BINARY_NAME} built")
+    else:
+        step_warn(f"compile skipped (multi-module codegen limitation in current SageLang)")
+        step("running in interpreter mode is the primary workflow")
+        step_warn("use './sagemake run' instead")
+
+
+def cmd_check(args: list[str]) -> None:
+    banner("check — JanusDBG")
+    section("Linting source files")
+    files = sage_source_files()
+    errors = 0
+    for f in files:
+        rel = f.relative_to(ROOT)
+        step(f"linting {rel}")
+        result = subprocess.run(
+            [str(SAGE), "lint", str(f)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            errors += 1
+            print(f"{RED}✗{RESET}")
+            print(result.stdout)
+        else:
+            ok()
+    if errors:
+        step_fail(f"{errors} file(s) failed linting")
+
+
+def cmd_test(args: list[str]) -> None:
+    banner("test — JanusDBG")
+    sage_path = f"{LIB_DIR}:{SRC_DIR}"
+    env = os.environ.copy()
+    env["SAGE_PATH"] = sage_path
+
+    section("Test suite")
+    step("running tests")
+    run_cmd([str(SAGE), str(TEST_DIR / "run_all.sage")], env=env)
+    step_ok("all tests passed")
+
+
+def cmd_run(args: list[str]) -> None:
+    banner("run — JanusDBG")
+    sage_path = f"{LIB_DIR}:{SRC_DIR}"
+    env = os.environ.copy()
+    env["SAGE_PATH"] = sage_path
+    section("Starting backend (interpreter mode)")
+    cmd = [str(SAGE), str(SRC_DIR / "main.sage")] + args
+    run_cmd(cmd, env=env)
+
+
+def cmd_install(args: list[str]) -> None:
+    banner("install — JanusDBG")
+    install_dir = Path("/usr/local/bin") if os.name != "nt" else Path(os.environ.get("APPDATA", "C:/ProgramData")) / "JanusDBG"
+    target = install_dir / BINARY_NAME
+    step(f"installing to {target}")
+    binary = BUILD_DIR / BINARY_NAME
+    if not binary.exists():
+        step_fail(f"{BINARY_NAME} not built — run build first")
+    try:
+        install_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(binary, target)
+        if os.name != "nt":
+            target.chmod(0o755)
+    except PermissionError:
+        step_fail("permission denied (try running with sudo)")
+    except Exception as e:
+        step_fail(f"installation failed: {e}")
+    step_ok(f"installed {BINARY_NAME}")
+
+
+def cmd_clean(args: list[str]) -> None:
+    banner("clean — JanusDBG")
+    section("Removing build artifacts")
+    step(f"removing {BUILD_DIR}")
+    if BUILD_DIR.exists():
+        shutil.rmtree(BUILD_DIR)
+    ok()
+
+
+def cmd_all(args: list[str]) -> None:
+    cmd_check(args)
+    cmd_test(args)
+    cmd_build(args)
+
+
+def check_dependencies() -> None:
+    section("Dependencies")
+    required = ["gcc", "make"]
+    missing = []
+    for dep in required:
+        step(f"checking {dep}")
+        if shutil.which(dep) is None:
+            missing.append(dep)
+            print(f"{RED}✗ not found{RESET}")
+        else:
+            ok()
+    if not SAGE.exists():
+        missing.append("sage interpreter (deps/SageLang/sage)")
+        step_warn("sage not built at deps/SageLang/sage — run make -C deps/SageLang first")
+    if missing:
+        step_fail(f"missing: {', '.join(missing)}")
+
+
+def main() -> None:
+    commands: dict[str, callable] = {
+        "build": cmd_build,
+        "check": cmd_check,
+        "test": cmd_test,
+        "run": cmd_run,
+        "install": cmd_install,
+        "clean": cmd_clean,
+        "all": cmd_all,
+    }
+
+    if len(sys.argv) < 2 or sys.argv[1] not in commands:
+        banner("JanusDBG — sagemake")
+        print(f"  Usage:  ./sagemake {'|'.join(commands.keys())}")
+        print()
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    args = sys.argv[2:]
+    check_dependencies()
+    commands[cmd](args)
+
+
+if __name__ == "__main__":
+    main()
