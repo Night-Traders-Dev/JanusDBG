@@ -2,7 +2,7 @@
 
 **Unified debugging backend for heterogeneous ARM Cortex-A + RISC-V SoCs.**
 
-JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to GDB/MI (ARM) and OpenOCD Tcl (RISC-V) debug sessions. Written in SageLang and cross-compilable to embedded targets.
+JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to GDB/MI (ARM) and OpenOCD Tcl (RISC-V) debug sessions. Written in SageLang and deployed via JIT launcher for native module support (`tcp`, `sys`). Built with a two-layer deployment strategy using Sage's bytecode mode for maximum portability.
 
 ---
 

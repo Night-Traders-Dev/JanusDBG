@@ -1,66 +1,128 @@
 import * as vscode from 'vscode';
-
-interface DAPMessage {
-    type: string;
-    seq: number;
-}
-
-interface DAPRequest extends DAPMessage {
-    command: string;
-    arguments?: any;
-}
-
-interface DAPResponse extends DAPMessage {
-    request_seq: number;
-    success: boolean;
-    command: string;
-    body?: any;
-}
+import { spawn } from 'child_process';
+import { resolve } from 'path';
 
 export class DebugAdapter implements vscode.DebugAdapter {
-    private sendEmitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
+    private outputChannel: vscode.OutputChannel;
+    private seq: number = 1;
+    private rpcConnection: any = null;
+    private backendProcess: any = null;
+    private nextSeq: number = 1;
 
-    readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this.sendEmitter.event;
+    constructor(outputChannel: vscode.OutputChannel) {
+        this.outputChannel = outputChannel;
+    }
 
-    handleMessage(message: vscode.DebugProtocolMessage): void {
-        const msg = message as unknown as DAPMessage;
-        if (msg.type === 'request') {
-            this.handleRequest(msg as unknown as DAPRequest);
+    public onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> | undefined;
+
+    public handleMessage(message: vscode.DebugProtocolMessage): void {
+        this.outputChannel.appendLine(`[dap] received: ${JSON.stringify(message, null, 2)}`);
+    }
+
+    public async startBackend(): Promise<void> {
+        if (this.backendProcess != null) {
+            return;
+        }
+
+        this.outputChannel.appendLine('Starting JanusDBG backend...');
+        const bundlePath = resolve(__dirname, '../../build/janusdbgd_native');
+
+        this.outputChannel.appendLine(`Running: ${bundlePath}`);
+        this.backendProcess = spawn(bundlePath, {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            cwd: resolve(__dirname, '../../'),
+        });
+
+        this.backendProcess.stdout?.on('data', (data: any) => {
+            this.outputChannel.appendLine(`[backend] ${data.toString().trim()}`);
+        });
+
+        this.backendProcess.stderr?.on('data', (data: any) => {
+            this.outputChannel.appendLine(`[backend error] ${data.toString().trim()}`);
+        });
+
+        this.backendProcess.on('error', (err: any) => {
+            this.outputChannel.appendLine(`[backend error] ${err.message}`);
+        });
+
+        this.backendProcess.on('exit', (code: any) => {
+            this.outputChannel.appendLine(`[backend exited] code ${code}`);
+            this.backendProcess = null;
+        });
+
+        await new Promise<void>((resolve) => {
+            setTimeout(() => {
+                this.sendRpcRequest('getSessions', {});
+                resolve();
+            }, 1000);
+        });
+    }
+
+    private connectToBackend(host: string, port: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const net = require('net');
+            this.outputChannel.appendLine(`Connecting to RPC server at ${host}:${port}`);
+            this.rpcConnection = net.connect(port, host, () => {
+                this.outputChannel.appendLine('[rpc] Connected to backend');
+                resolve();
+            });
+
+            this.rpcConnection.on('data', (data: any) => {
+                try {
+                    const response = JSON.parse(data.toString());
+                    this.outputChannel.appendLine(`[rpc] response: ${JSON.stringify(response, null, 2)}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[error] Failed to parse response: ${err}`);
+                }
+            });
+
+            this.rpcConnection.on('error', (err: any) => {
+                this.outputChannel.appendLine(`[error] Connection error: ${err.message}`);
+                reject(err);
+            });
+
+            this.rpcConnection.on('end', () => {
+                this.outputChannel.appendLine('[rpc] Connection ended');
+                if (this.rpcConnection) {
+                    this.rpcConnection.destroy();
+                }
+                this.rpcConnection = null;
+            });
+        });
+    }
+
+    private sendRpcRequest(method: string, params: any): void {
+        if (this.rpcConnection && this.rpcConnection.write) {
+            const request = {
+                jsonrpc: '2.0',
+                method,
+                params,
+                id: this.nextSeq++,
+            };
+            const requestStr = JSON.stringify(request) + '\n';
+            try {
+                this.rpcConnection.write(requestStr);
+            } catch (err) {
+                this.outputChannel.appendLine(`[error] Failed to send RPC request: ${err}`);
+            }
+        } else {
+            this.outputChannel.appendLine(`[error] Not connected to RPC server`);
         }
     }
 
-    private handleRequest(request: DAPRequest): void {
-        switch (request.command) {
-            case 'initialize':
-                this.sendResponse(request, {
-                    supportsConfigurationDoneRequest: true,
-                    supportsSetVariable: true,
-                });
-                break;
-            case 'launch':
-                this.sendResponse(request, {});
-                break;
-            case 'disconnect':
-                this.sendResponse(request, {});
-                break;
-            default:
-                this.sendResponse(request, {});
+    public stopBackend(): void {
+        this.sendRpcRequest('disconnect', { session: 'arm' });
+        if (this.backendProcess != null) {
+            this.backendProcess.kill();
+            this.backendProcess = null;
         }
     }
 
-    private sendResponse(request: DAPRequest, body: any): void {
-        const response: DAPResponse = {
-            type: 'response',
-            seq: 0,
-            request_seq: request.seq,
-            success: true,
-            command: request.command,
-            body,
-        };
-        this.sendEmitter.fire(response as unknown as vscode.DebugProtocolMessage);
-    }
-
-    dispose(): void {
-        this.sendEmitter.dispose();
+    public dispose(): void {
+        this.stopBackend();
+        if (this.rpcConnection) {
+            this.rpcConnection.destroy();
+            this.rpcConnection = null;
+        }
     }
 }

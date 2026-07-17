@@ -2,7 +2,7 @@
 
 ## Overview
 
-JanusDBG is a lightweight, dual-target debugger backend that bridges JSON-RPC 2.0 requests to GDB/MI (ARM Cortex-A) and OpenOCD Tcl (RISC-V) debug sessions. It is written in SageLang and deployed via JIT launcher for native module support (`tcp`, `sys`).
+JanusDBG is a lightweight, dual-target debugger backend that bridges JSON-RPC 2.0 requests to GDB/MI (ARM Cortex-A) and OpenOCD Tcl (RISC-V) debug sessions. It is written in SageLang and deployed via JIT launcher for native module support (`tcp`, `sys`). No C compilation is required.
 
 ## High-Level Design
 
