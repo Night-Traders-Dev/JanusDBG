@@ -23,7 +23,7 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
 | **Cross-Core Breakpoints** | ✅ | Set breakpoints on multiple sessions simultaneously |
 | **Synchronized Step/Continue** | ✅ | Sequential multi-session step, halt, resume |
 | **JIT Deployment** | ✅ | Architecture-independent shell launcher via `sage --jit` |
-| **Test Suite** | ✅ | 33 tests covering all modules |
+| **Test Suite** | ✅ | 42 tests covering all modules |
 
 ### Planned Features
 
@@ -71,6 +71,20 @@ make test
 # or
 ./sagemake test
 ```
+
+### Cross-Architecture Test Results
+
+JanusDBG is natively built and tested on real hardware across three architectures:
+
+| Device | Architecture | SageLang | Tests | Status |
+|--------|-------------|----------|-------|--------|
+| Raspberry Pi 4 | aarch64 (ARM64) | v4.0.9 | 42/42 | ✅ All passed |
+| OrangePi | rv64 (RISC-V 64) | v4.0.9 | 42/42 | ✅ All passed |
+| Raspberry Pi 2 | arm32 (ARMv7) | v4.0.9 | 42/42 | ✅ All passed |
+
+> **Note:** Tests are run natively on each device (no cross-compilation). The `sagemake` build system
+> prefers the system-installed `sage` interpreter over the bundled x86_64 binary for cross-architecture
+> compatibility.
 
 ---
 
@@ -131,7 +145,7 @@ Component-level documentation is in `docs/`:
 | [Sync Engine](docs/sync-engine.md) | Cross-session coordination, merged state |
 | [GDB/MI Adapter](docs/adapter-gdb-mi.md) | ARM debug adapter, TCP protocol |
 | [OpenOCD Adapter](docs/adapter-openocd.md) | RISC-V debug adapter, Tcl protocol |
-| [Test Suite](docs/test-suite.md) | 21 test coverage map |
+| [Test Suite](docs/test-suite.md) | 42 test coverage map |
 | [Build System](docs/build-system.md) | sagemake/Makefile targets, CI/CD |
 | [Deployment](docs/deployment.md) | JIT launcher workflow, target-independence |
 
