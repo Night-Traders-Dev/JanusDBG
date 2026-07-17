@@ -8,13 +8,15 @@ Usage:
     ./sagemake [command] [flags]
 
 Commands:
-    build      Compile the backend to a standalone binary
+    build      Deploy binary for native arch
+    build-all  Deploy binaries for all 6 targets (x86, x86_64, rv32, rv64, arm32, aarch64)
     check      Lint all Sage source files
     test       Run the test suite
     run        Run the backend in interpreter mode
-    install    Install built artifacts
+    install    Install built artifact
     clean      Remove build artifacts
-    all        Run check then build then test
+    deploy     Build deploy bundle only (no cross-compile)
+    all        Run check → test → deploy
 """
 
 import os
@@ -31,6 +33,31 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
+
+ROOT = Path(__file__).resolve().parent
+SAGE = ROOT / "deps" / "SageLang" / "sage"
+SRC_DIR = ROOT / "src"
+LIB_DIR = ROOT / "lib"
+TEST_DIR = ROOT / "tests"
+BUILD_DIR = ROOT / "build"
+BINARY_NAME = "janusdbgd"
+
+CROSS_TARGETS = {
+    "x86":      "i686-linux-gnu-gcc",
+    "x86_64":   "gcc",
+    "rv32":     "riscv32-linux-gnu-gcc",
+    "rv64":     "riscv64-linux-gnu-gcc",
+    "arm32":    "arm-linux-gnueabi-gcc",
+    "aarch64":  "aarch64-linux-gnu-gcc",
+}
+
+# Alias maps
+TARGET_ALIASES = {
+    "amd64": "x86_64", "i386": "x86", "i686": "x86",
+    "riscv32": "rv32", "riscv64": "rv64",
+    "arm": "arm32", "armhf": "arm32",
+    "arm64": "aarch64",
+}
 
 
 def banner(title: str) -> None:
@@ -53,11 +80,6 @@ def ok() -> None:
     print(f"{GREEN}✓ done{RESET}")
 
 
-def fail() -> None:
-    print(f"{RED}✗ failed{RESET}")
-    sys.exit(1)
-
-
 def step_ok(detail: str) -> None:
     print(f"{GREEN}✓ {detail}{RESET}")
 
@@ -72,25 +94,13 @@ def step_warn(detail: str) -> None:
 
 
 def run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    if "env" in kwargs:
-        kwargs["env"] = {**os.environ, **kwargs["env"]}
-    else:
-        kwargs["env"] = os.environ.copy()
     try:
         return subprocess.run(cmd, check=True, **kwargs)
     except subprocess.CalledProcessError as e:
-        step_fail(f"command failed with exit code {e.returncode}: {' '.join(cmd)}")
+        step_fail(f"command failed: {' '.join(cmd)} (exit {e.returncode})")
     except FileNotFoundError:
         step_fail(f"command not found: {cmd[0]}")
-
-
-ROOT = Path(__file__).resolve().parent
-SAGE = ROOT / "deps" / "SageLang" / "sage"
-SRC_DIR = ROOT / "src"
-LIB_DIR = ROOT / "lib"
-TEST_DIR = ROOT / "tests"
-BUILD_DIR = ROOT / "build"
-BINARY_NAME = "janusdbgd"
+    return None  # unreachable
 
 
 def sage_source_files() -> list[Path]:
@@ -101,52 +111,22 @@ def sage_source_files() -> list[Path]:
     return sorted(files)
 
 
-def cmd_build(args: list[str]) -> None:
-    banner("build — JanusDBG")
-    sage_path = f"{LIB_DIR}:{SRC_DIR}"
-    env = os.environ.copy()
-    env["SAGE_PATH"] = sage_path
-
-    section("Compilation")
-    step("syntax check")
-    result = subprocess.run(
-        [str(SAGE), "lint", str(SRC_DIR / "main.sage")],
-        capture_output=True, text=True,
-    )
-    if "Error" in result.stdout or "error" in result.stderr:
-        print(f"{RED}✗{RESET}")
-        print(result.stdout)
-        step_fail("syntax check failed")
-    ok()
-
-    step("compiling to standalone binary (C backend)")
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    target = BUILD_DIR / BINARY_NAME
-    result = subprocess.run(
-        [str(SAGE), "--compile", str(SRC_DIR / "main.sage"), "-o", str(target)],
-        capture_output=True, text=True,
-        env=env,
-    )
-    if result.returncode == 0:
-        step_ok(f"{BINARY_NAME} built")
-    else:
-        step_warn(f"compile skipped (multi-module codegen limitation in current SageLang)")
-        step("running in interpreter mode is the primary workflow")
-        step_warn("use './sagemake run' instead")
-
-
 def cmd_check(args: list[str]) -> None:
     banner("check — JanusDBG")
     section("Linting source files")
     files = sage_source_files()
     errors = 0
+    has_sage_lint = shutil.which("sage-lint") or SAGE.exists()
+    if not has_sage_lint:
+        step_warn("sage interpreter not found — skipping lint")
+        return
+    sage_bin = str(SAGE) if SAGE.exists() else "sage"
     for f in files:
         rel = f.relative_to(ROOT)
         step(f"linting {rel}")
         result = subprocess.run(
-            [str(SAGE), "lint", str(f)],
-            capture_output=True,
-            text=True,
+            [sage_bin, "lint", str(f)],
+            capture_output=True, text=True,
         )
         if result.returncode != 0:
             errors += 1
@@ -166,8 +146,140 @@ def cmd_test(args: list[str]) -> None:
 
     section("Test suite")
     step("running tests")
+    if not SAGE.exists():
+        step_fail("sage interpreter not built — run make -C deps/SageLang first")
     run_cmd([str(SAGE), str(TEST_DIR / "run_all.sage")], env=env)
     step_ok("all tests passed")
+
+
+def cmd_deploy(args: list[str]) -> None:
+    """Build the deploy bundle only (no cross-compile)."""
+    banner("deploy — JanusDBG")
+    section("Generating bundle")
+    step("bundling source modules")
+    deploy_script = ROOT / "tools" / "deploy.py"
+    if not deploy_script.exists():
+        step_fail("tools/deploy.py not found")
+    env = os.environ.copy()
+    result = subprocess.run(
+        [sys.executable, str(deploy_script), "x86_64"],  # just generates bundle
+        capture_output=True, text=True, env=env, cwd=ROOT,
+    )
+    if result.returncode != 0:
+        print(result.stderr)
+        step_fail("deploy failed")
+    for line in result.stdout.splitlines():
+        if "Output:" in line or "Bundled:" in line:
+            step_ok(line.strip())
+    step_ok("deploy bundle ready")
+
+
+def cmd_build(args: list[str]) -> None:
+    """Build for native architecture or a specific target."""
+    banner("build — JanusDBG")
+
+    # Determine target
+    target = "x86_64"
+    if args:
+        t = args[0]
+        target = TARGET_ALIASES.get(t, t)
+
+    # Run tests first
+    try:
+        cmd_test([])
+    except SystemExit:
+        step_fail("tests must pass before build")
+
+    section(f"Building for {target}")
+    deploy_script = ROOT / "tools" / "deploy.py"
+    if not deploy_script.exists():
+        step_fail("tools/deploy.py not found")
+
+    # Check cross-compiler availability
+    cc = shutil.which(CROSS_TARGETS.get(target, "gcc"))
+    if not cc:
+        cc = shutil.which("gcc")
+        if cc:
+            step_warn(f"cross-compiler '{CROSS_TARGETS.get(target, '?')}' not found, using native gcc")
+        else:
+            step_fail(f"no C compiler found for target '{target}'")
+
+    step("deploying")
+    result = subprocess.run(
+        [sys.executable, str(deploy_script), target],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    if result.returncode != 0:
+        print(result.stderr)
+        step_fail(f"build failed for {target}")
+    for line in result.stdout.splitlines():
+        if "Output:" in line or "Warning:" in line or "Bundled:" in line:
+            print(f"    {line.strip()}")
+
+    # Run tests after build too
+    try:
+        cmd_test([])
+    except SystemExit:
+        step_fail("tests must pass after build")
+
+    step_ok(f"{BINARY_NAME} built for {target}")
+
+
+def cmd_build_all(args: list[str]) -> None:
+    """Build for all 6 targets."""
+    banner("build-all — JanusDBG")
+
+    # Run tests first
+    try:
+        cmd_test([])
+    except SystemExit:
+        step_fail("tests must pass before build")
+
+    env = os.environ.copy()
+    deploy_script = ROOT / "tools" / "deploy.py"
+
+    successes = []
+    failures = []
+
+    for target, cc_name in CROSS_TARGETS.items():
+        section(f"Building for {target} ({cc_name})")
+        cc = shutil.which(cc_name)
+        if not cc:
+            cc = shutil.which("gcc")
+            if cc:
+                step_warn(f"cross-compiler '{cc_name}' not found, using native gcc")
+            else:
+                step_warn(f"no C compiler found for {target}")
+                failures.append(target)
+                continue
+
+        step("deploying")
+        result = subprocess.run(
+            [sys.executable, str(deploy_script), target],
+            capture_output=True, text=True, cwd=ROOT,
+        )
+        if result.returncode != 0:
+            step_warn(f"build failed for {target}")
+            failures.append(target)
+        else:
+            for line in result.stdout.splitlines():
+                if "Output:" in line or "Bundled:" in line:
+                    print(f"    {line.strip()}")
+            successes.append(target)
+
+    print()
+    print(f"  {GREEN}{len(successes)} targets succeeded{RESET}: {', '.join(successes)}")
+    if failures:
+        print(f"  {RED}{len(failures)} targets failed{RESET}: {', '.join(failures)}")
+
+    # Run tests after build
+    try:
+        cmd_test([])
+    except SystemExit:
+        step_fail("tests must pass after build")
+
+    if failures:
+        step_fail("some targets failed")
 
 
 def cmd_run(args: list[str]) -> None:
@@ -176,27 +288,29 @@ def cmd_run(args: list[str]) -> None:
     env = os.environ.copy()
     env["SAGE_PATH"] = sage_path
     section("Starting backend (interpreter mode)")
+    if not SAGE.exists():
+        step_fail("sage interpreter not built — run make -C deps/SageLang first")
     cmd = [str(SAGE), str(SRC_DIR / "main.sage")] + args
     run_cmd(cmd, env=env)
 
 
 def cmd_install(args: list[str]) -> None:
+    """Install deploy binary to /usr/local/bin."""
     banner("install — JanusDBG")
-    install_dir = Path("/usr/local/bin") if os.name != "nt" else Path(os.environ.get("APPDATA", "C:/ProgramData")) / "JanusDBG"
-    target = install_dir / BINARY_NAME
-    step(f"installing to {target}")
-    binary = BUILD_DIR / BINARY_NAME
+    install_dir = Path("/usr/local/bin")
+    # Determine which binary to install
+    target = args[0] if args else "x86_64"
+    binary = BUILD_DIR / f"{BINARY_NAME}_{target}"
     if not binary.exists():
-        step_fail(f"{BINARY_NAME} not built — run build first")
+        step_fail(f"{binary.name} not built — run build {target} first")
+    dest = install_dir / BINARY_NAME
+    step(f"installing to {dest}")
     try:
         install_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(binary, target)
-        if os.name != "nt":
-            target.chmod(0o755)
+        shutil.copy2(binary, dest)
+        dest.chmod(0o755)
     except PermissionError:
-        step_fail("permission denied (try running with sudo)")
-    except Exception as e:
-        step_fail(f"installation failed: {e}")
+        step_fail(f"permission denied (try sudo)")
     step_ok(f"installed {BINARY_NAME}")
 
 
@@ -212,12 +326,12 @@ def cmd_clean(args: list[str]) -> None:
 def cmd_all(args: list[str]) -> None:
     cmd_check(args)
     cmd_test(args)
-    cmd_build(args)
+    cmd_deploy(args)
 
 
 def check_dependencies() -> None:
     section("Dependencies")
-    required = ["gcc", "make"]
+    required = ["gcc"]
     missing = []
     for dep in required:
         step(f"checking {dep}")
@@ -236,6 +350,8 @@ def check_dependencies() -> None:
 def main() -> None:
     commands: dict[str, callable] = {
         "build": cmd_build,
+        "build-all": cmd_build_all,
+        "deploy": cmd_deploy,
         "check": cmd_check,
         "test": cmd_test,
         "run": cmd_run,

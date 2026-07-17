@@ -34,7 +34,7 @@ class GDBMIAdapter:
         return self.send_command("-exec-step")
 
     ## Continue execution.
-    proc continue(self):
+    proc cont(self):
         return self.send_command("-exec-continue")
 
     ## Read all register values.
