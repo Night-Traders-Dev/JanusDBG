@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Comprehensive test suite covering all JanusDBG modules: logger, session manager, GDB/MI adapter, OpenOCD adapter, and RPC server.
+Comprehensive test suite covering all JanusDBG modules: logger, session manager, GDB/MI adapter, OpenOCD adapter, RPC server, and sync engine.
 
 ## Running
 
@@ -18,7 +18,7 @@ Tests are run by the build system before and after every build operation.
 
 ## Test Summary
 
-21 tests total, covering 5 modules:
+33 tests total, covering 6 modules:
 
 ### lib.log (3 tests)
 
@@ -66,6 +66,28 @@ Tests are run by the build system before and after every build operation.
 | `test_rpc_set_breakpoint_not_connected` | `setBreakpoint` without connect returns error |
 | `test_rpc_read_registers_not_connected` | `readRegisters` without connect returns error |
 
+### sync engine (7 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_sync_engine_create` | Engine creation, breakpoints start empty |
+| `test_sync_halt_raises_not_connected` | `sync_halt` raises when not connected |
+| `test_sync_resume_raises_not_connected` | `sync_resume` raises when not connected |
+| `test_sync_step_raises_not_connected` | `sync_step` raises when not connected |
+| `test_sync_set_breakpoint_raises_not_connected` | `sync_set_breakpoint` raises when not connected |
+| `test_sync_get_merged_state_raises_not_connected` | `sync_get_merged_state` raises when not connected |
+| `test_sync_multi_session_fails` | Multi-session halt raises when not connected |
+
+### rpc sync methods (5 tests)
+
+| Test | What It Checks |
+|------|----------------|
+| `test_rpc_sync_halt_not_connected` | `syncHalt` RPC without connect returns error |
+| `test_rpc_sync_resume_not_connected` | `syncResume` RPC without connect returns error |
+| `test_rpc_sync_step_not_connected` | `syncStep` RPC without connect returns error |
+| `test_rpc_sync_set_breakpoint_not_connected` | `syncSetBreakpoint` RPC without connect returns error |
+| `test_rpc_get_merged_state_not_connected` | `getMergedState` RPC without connect returns error |
+
 ## Framework
 
 Uses `std.testing` with the following API:
@@ -87,4 +109,6 @@ Uses `std.testing` with the following API:
 - Adapter methods raise when not connected — tests use `try/catch` to verify error messages
 - Session connect tests attempt real TCP connection on `localhost:1` (expected to fail) and catch the exception
 - RPC error tests verify proper JSON-RPC error codes (`-32000` for application errors, `-32601` for unknown methods)
-- All 21 tests pass (`./sagemake check` runs tests before and after every build)
+- Sync engine tests verify all 5 operations raise when sessions are not connected (adapter method error propagation)
+- RPC sync method tests verify JSON-RPC error responses for sync operations on unconnected sessions
+- All 33 tests pass (`./sagemake check` runs tests before and after every build)

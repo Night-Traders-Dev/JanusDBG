@@ -19,15 +19,24 @@ JanusDBG is a lightweight, dual-target debugger backend that bridges JSON-RPC 2.
                                       │  └──────────────────────────────┘ │
                                       │                                    │
                                       │  ┌──────────────────────────────┐ │
-                                      │  │  rpc/server.sage             │ │
-                                      │  │  - TCP JSON-RPC 2.0          │ │
-                                      │  │  - method dispatch           │ │
-                                      │  │  - batch support             │ │
-                                      │  │  - try/catch error handling  │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  session/session.sage        │ │
+                                       │  │  rpc/server.sage             │ │
+                                       │  │  - TCP JSON-RPC 2.0          │ │
+                                       │  │  - method dispatch           │ │
+                                       │  │  - batch support             │ │
+                                       │  │  - try/catch error handling  │ │
+                                       │  │  - sync method routing       │ │
+                                       │  └──────────────────────────────┘ │
+                                       │                                    │
+                                       │  ┌──────────────────────────────┐ │
+                                       │  │  sync/engine.sage            │ │
+                                       │  │  - cross-session coordination│ │
+                                       │  │  - sequential multi-session  │ │
+                                       │  │  - breakpoint tracking       │ │
+                                       │  │  - merged state collection   │ │
+                                       │  └──────────────────────────────┘ │
+                                       │                                    │
+                                       │  ┌──────────────────────────────┐ │
+                                       │  │  session/session.sage        │ │
                                       │  │  - session lifecycle         │ │
                                       │  │  - adapter creation & mgmt   │ │
                                       │  │  - register/connect/disconnect│ │
@@ -64,20 +73,26 @@ JanusDBG is a lightweight, dual-target debugger backend that bridges JSON-RPC 2.
    ├── std.argparse
    ├── sys
    ├── lib/log.sage
-   ├── src/rpc/server.sage
-   │    ├── tcp (native module)
-   │    ├── lib/json.sage
-   │    ├── lib/log.sage
-   │    └── src/session/session.sage
-   │         ├── lib/log.sage
-   │         └── src/adapters/gdb_mi.sage  (conditional, on connect)
-   │         │    ├── tcp (native module)
-   │         │    └── lib/log.sage
-   │         └── src/adapters/openocd.sage (conditional, on connect)
-   │              ├── tcp (native module)
-   │              └── lib/log.sage
-   └── src/session/session.sage
-        └── lib/log.sage
+    ├── src/rpc/server.sage
+    │    ├── tcp (native module)
+    │    ├── lib/json.sage
+    │    ├── lib/log.sage
+    │    ├── src/session/session.sage
+    │    │    ├── lib/log.sage
+    │    │    └── src/adapters/gdb_mi.sage  (conditional, on connect)
+    │    │    │    ├── tcp (native module)
+    │    │    │    └── lib/log.sage
+    │    │    └── src/adapters/openocd.sage (conditional, on connect)
+    │    │         ├── tcp (native module)
+    │    │         └── lib/log.sage
+    │    └── src/sync/engine.sage
+    │         ├── lib/log.sage
+    │         └── src/session/session.sage
+    ├── src/session/session.sage
+    │    └── lib/log.sage
+    └── src/sync/engine.sage
+         ├── lib/log.sage
+         └── src/session/session.sage
 ```
 
 No circular dependencies. Each module imports only what it needs.
@@ -122,6 +137,7 @@ JanusDBG/
 │   ├── main.sage        # Entry point
 │   ├── rpc/server.sage  # JSON-RPC server
 │   ├── session/session.sage  # Session manager
+│   ├── sync/engine.sage  # Synchronization engine
 │   └── adapters/
 │       ├── gdb_mi.sage  # ARM GDB/MI adapter (TCP)
 │       └── openocd.sage # RISC-V OpenOCD adapter (TCP)
@@ -132,7 +148,7 @@ JanusDBG/
 │   ├── bundle.py         # Module bundler
 │   └── deploy.py         # Cross-deploy tool
 ├── tests/
-│   └── run_all.sage     # Test suite (21 tests)
+│   └── run_all.sage     # Test suite (33 tests)
 ├── deps/
 │   └── SageLang/        # SageLang v4.0.8 source
 └── docs/                 # Component documentation
@@ -144,6 +160,7 @@ JanusDBG/
     ├── rpc-server.md
     ├── adapter-gdb-mi.md
     ├── adapter-openocd.md
+    ├── sync-engine.md
     ├── test-suite.md
     ├── build-system.md
     └── deployment.md

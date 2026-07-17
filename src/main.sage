@@ -5,6 +5,7 @@ from sys import args, exit as sys_exit
 from lib.log import create_logger, info
 from src.rpc.server import start_server
 from src.session.session import create_session_manager, sm_register
+from src.sync.engine import create_sync_engine
 
 let LOG_DEBUG = 0
 let LOG_INFO = 1
@@ -38,7 +39,10 @@ proc main():
     sm_register(sm, "arm", arm_host, "gdb_mi")
     sm_register(sm, "rv", rv_host, "openocd")
 
-    start_server(rpc_port, sm, logger)
+    let sync_engine = create_sync_engine(sm, logger)
+    info(logger, "Sync engine created")
+
+    start_server(rpc_port, sm, sync_engine, logger)
     info(logger, "JanusDBG shutting down")
 
 try:

@@ -3,9 +3,10 @@ from tcp import recvline, sendall, listen, accept, close as tcp_close
 from lib.json import json_parse, json_stringify
 from lib.log import info, warn, error
 from src.session.session import sm_connect, sm_disconnect, sm_get_sessions, sm_get_adapter
+from src.sync.engine import sync_halt, sync_resume, sync_step, sync_set_breakpoint, sync_get_merged_state
 
 ## Handle a single JSON-RPC request and return a response.
-proc handle_request(req, session_mgr, logger):
+proc handle_request(req, session_mgr, sync_engine, logger):
     let method = req["method"]
     let params = {}
     if dict_has(req, "params"):
@@ -44,13 +45,28 @@ proc handle_request(req, session_mgr, logger):
             case "readReg":
                 let adapter = sm_get_adapter(session_mgr, params["session"])
                 return {"jsonrpc": "2.0", "result": adapter.read_reg(params["reg"]), "id": req_id}
+            case "syncHalt":
+                sync_halt(sync_engine, params["sessions"])
+                return {"jsonrpc": "2.0", "result": "halted", "id": req_id}
+            case "syncResume":
+                sync_resume(sync_engine, params["sessions"])
+                return {"jsonrpc": "2.0", "result": "resumed", "id": req_id}
+            case "syncStep":
+                sync_step(sync_engine, params["sessions"])
+                return {"jsonrpc": "2.0", "result": "stepped", "id": req_id}
+            case "syncSetBreakpoint":
+                sync_set_breakpoint(sync_engine, params["sessions"], params["addr"])
+                return {"jsonrpc": "2.0", "result": "set", "id": req_id}
+            case "getMergedState":
+                let state = sync_get_merged_state(sync_engine, params["sessions"])
+                return {"jsonrpc": "2.0", "result": state, "id": req_id}
             default:
                 return {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": req_id}
     catch e:
         return {"jsonrpc": "2.0", "error": {"code": -32000, "message": e}, "id": req_id}
 
 ## Read, parse, and respond to an incoming TCP connection.
-proc handle_connection(conn, session_mgr, logger):
+proc handle_connection(conn, session_mgr, sync_engine, logger):
     let data = recvline(conn, 65536)
     if data == nil or data == "":
         return
@@ -61,7 +77,7 @@ proc handle_connection(conn, session_mgr, logger):
 
     let responses = []
     for req in parsed:
-        let resp = handle_request(req, session_mgr, logger)
+        let resp = handle_request(req, session_mgr, sync_engine, logger)
         push(responses, resp)
 
     let output = responses[0]
@@ -71,7 +87,7 @@ proc handle_connection(conn, session_mgr, logger):
     sendall(conn, response_str)
 
 ## Start the RPC server on the given port. Blocks forever.
-proc start_server(port: Number, session_mgr, logger):
+proc start_server(port: Number, session_mgr, sync_engine, logger):
     info(logger, "Starting RPC server on port " + str(port))
 
     let server = listen("0.0.0.0", port)
@@ -84,5 +100,5 @@ proc start_server(port: Number, session_mgr, logger):
     while running:
         let conn = accept(server)
         if conn >= 0:
-            handle_connection(conn, session_mgr, logger)
+            handle_connection(conn, session_mgr, sync_engine, logger)
             tcp_close(conn)

@@ -21,14 +21,23 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
                                       │  └──────────────────────────────┘ │
                                       │                                    │
                                       │  ┌──────────────────────────────┐ │
-                                      │  │  rpc/server.sage             │ │
-                                      │  │  - JSON-RPC 2.0 dispatcher   │ │
-                                      │  │  - session & debug methods   │ │
-                                      │  │  - batch request support     │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  session/session.sage        │ │
+                                       │  │  rpc/server.sage             │ │
+                                       │  │  - JSON-RPC 2.0 dispatcher   │ │
+                                       │  │  - session & debug methods   │ │
+                                       │  │  - batch request support     │ │
+                                       │  │  - sync method routing       │ │
+                                       │  └──────────────────────────────┘ │
+                                       │                                    │
+                                       │  ┌──────────────────────────────┐ │
+                                       │  │  sync/engine.sage            │ │
+                                       │  │  - cross-session coordination│ │
+                                       │  │  - sequential multi-session  │ │
+                                       │  │  - breakpoint tracking       │ │
+                                       │  │  - merged state collection   │ │
+                                       │  └──────────────────────────────┘ │
+                                       │                                    │
+                                       │  ┌──────────────────────────────┐ │
+                                       │  │  session/session.sage        │ │
                                       │  │  - session lifecycle         │ │
                                       │  │  - adapter creation & mgmt   │ │
                                       │  │  - register/connect/disconnect│ │
@@ -62,16 +71,17 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
 | **GDB/MI Adapter** | ✅ | TCP connection to GDB, send MI commands, (gdb) prompt parsing |
 | **OpenOCD Adapter** | ✅ | TCP connection to OpenOCD Tcl server, send Tcl commands |
 | **Error Handling** | ✅ | try/catch wraps all adapter ops, returns JSON-RPC error codes |
+| **Sync Engine** | ✅ | Cross-session halt, resume, step, breakpoint, merged state |
+| **Cross-Core Breakpoints** | ✅ | Set breakpoints on multiple sessions simultaneously |
+| **Synchronized Step/Continue** | ✅ | Sequential multi-session step, halt, resume |
 | **Cross-Compilation** | ✅ | Bundle + C launcher stub for 6 targets (x86, x86_64, arm32, aarch64, rv32, rv64) |
-| **Test Suite** | ✅ | 21 tests covering all modules |
+| **Test Suite** | ✅ | 33 tests covering all modules |
 
 ### Planned Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
 | **VS Code Extension** | 📋 | Rich UI with debug controls, register views, timeline |
-| **Cross-Core Breakpoints** | 📋 | Coordinate breakpoints across ARM + RISC-V |
-| **Synchronized Step/Continue** | 📋 | Instruction-level coordinated stepping |
 | **Performance Timeline** | 📋 | Merged execution events from both cores |
 | **Profiling Aggregator** | 📋 | Flame graphs from hardware counters |
 | **Embedded REPL** | 📋 | SageLang REPL for custom trace scripts |
@@ -148,6 +158,7 @@ JanusDBG/
 │   ├── main.sage         # Entry point
 │   ├── rpc/server.sage   # JSON-RPC server (TCP)
 │   ├── session/session.sage  # Session manager
+│   ├── sync/engine.sage  # Synchronization engine
 │   └── adapters/
 │       ├── gdb_mi.sage   # GDB/MI adapter (TCP)
 │       └── openocd.sage  # OpenOCD adapter (TCP)
@@ -158,7 +169,7 @@ JanusDBG/
 │   ├── bundle.py         # Module bundler
 │   └── deploy.py         # Cross-deploy C launcher generator
 ├── tests/
-│   └── run_all.sage      # 21 tests
+│   └── run_all.sage      # 33 tests
 ├── build/                # Built binaries
 ├── deps/SageLang/        # SageLang v4.0.8 source
 └── docs/                 # Component documentation (11 files)
@@ -185,7 +196,8 @@ Component-level documentation is in `docs/`:
 | [Logger](docs/lib-log.md) | Level-based logger API |
 | [JSON Utilities](docs/lib-json.md) | Self-contained JSON parser/serializer |
 | [Session Manager](docs/session-manager.md) | Session lifecycle, adapter creation |
-| [RPC Server](docs/rpc-server.md) | JSON-RPC 2.0 dispatch, error handling |
+| [RPC Server](docs/rpc-server.md) | JSON-RPC 2.0 dispatch, error handling, sync methods |
+| [Sync Engine](docs/sync-engine.md) | Cross-session coordination, merged state |
 | [GDB/MI Adapter](docs/adapter-gdb-mi.md) | ARM debug adapter, TCP protocol |
 | [OpenOCD Adapter](docs/adapter-openocd.md) | RISC-V debug adapter, Tcl protocol |
 | [Test Suite](docs/test-suite.md) | 21 test coverage map |

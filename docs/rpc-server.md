@@ -6,14 +6,15 @@ Implements a JSON-RPC 2.0 server over TCP that dispatches incoming requests to s
 
 ## API
 
-### `handle_request(req, session_mgr, logger) -> dict`
+### `handle_request(req, session_mgr, sync_engine, logger) -> dict`
 
-Process a single JSON-RPC request and return a response dict. All adapter operations are wrapped in try/catch — exceptions return `{"code": -32000, "message": <error string>}`.
+Process a single JSON-RPC request and return a response dict. All operations are wrapped in try/catch — exceptions return `{"code": -32000, "message": <error string>}`.
 
 | Param | Type | Description |
 |-------|------|-------------|
 | `req` | dict | Parsed JSON-RPC request with `method`, optional `params`, optional `id` |
 | `session_mgr` | dict | Session manager from `create_session_manager` |
+| `sync_engine` | dict | Sync engine from `create_sync_engine` |
 | `logger` | dict | Logger instance |
 
 **Supported methods:**
@@ -38,6 +39,16 @@ Process a single JSON-RPC request and return a response dict. All adapter operat
 | `"readRegisters"` | `{"session": "..."}` | `adapter.read_registers()` | Read all registers |
 | `"readReg"` | `{"session": "...", "reg": "..."}` | `adapter.read_reg(reg)` | Read one register |
 
+#### Synchronization Commands
+
+| Method | Params | Sync Engine Call | Description |
+|--------|--------|-----------------|-------------|
+| `"syncHalt"` | `{"sessions": [...]}` | `sync_halt(engine, sessions)` | Halt multiple sessions sequentially |
+| `"syncResume"` | `{"sessions": [...]}` | `sync_resume(engine, sessions)` | Resume multiple sessions sequentially |
+| `"syncStep"` | `{"sessions": [...]}` | `sync_step(engine, sessions)` | Step multiple sessions sequentially |
+| `"syncSetBreakpoint"` | `{"sessions": [...], "addr": "..."}` | `sync_set_breakpoint(engine, sessions, addr)` | Set breakpoint on multiple sessions |
+| `"getMergedState"` | `{"sessions": [...]}` | `sync_get_merged_state(engine, sessions)` | Get merged register state keyed by session |
+
 **Response format:**
 ```python
 # Success:
@@ -50,7 +61,7 @@ Process a single JSON-RPC request and return a response dict. All adapter operat
 {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": req_id}
 ```
 
-### `handle_connection(conn, session_mgr, logger)`
+### `handle_connection(conn, session_mgr, sync_engine, logger)`
 
 Read, parse, and respond to an incoming TCP connection.
 
@@ -58,6 +69,7 @@ Read, parse, and respond to an incoming TCP connection.
 |-------|------|-------------|
 | `conn` | Number | TCP socket fd from `tcp.accept()` |
 | `session_mgr` | dict | Session manager |
+| `sync_engine` | dict | Sync engine |
 | `logger` | dict | Logger |
 
 **Flow:**
@@ -69,7 +81,7 @@ Read, parse, and respond to an incoming TCP connection.
 6. If single request, return a single response; if batch, return an array of responses
 7. Stringify the response and send via `tcp.sendall()`
 
-### `start_server(port: Number, session_mgr, logger)`
+### `start_server(port: Number, session_mgr, sync_engine, logger)`
 
 Start the RPC server on the given port. Blocks forever.
 
@@ -77,6 +89,7 @@ Start the RPC server on the given port. Blocks forever.
 |-------|------|-------------|
 | `port` | Number | TCP port to listen on |
 | `session_mgr` | dict | Session manager |
+| `sync_engine` | dict | Sync engine |
 | `logger` | dict | Logger |
 
 **Flow:**
