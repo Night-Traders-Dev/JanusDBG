@@ -98,30 +98,7 @@ Full API reference: [RPC Server](docs/rpc-server.md)
 
 ## Project Structure
 
-```
-JanusDBG/
-├── Makefile              # Build wrapper
-├── sagemake              # Build orchestrator (Python)
-├── src/
-│   ├── main.sage         # Entry point
-│   ├── rpc/server.sage   # JSON-RPC server (TCP)
-│   ├── session/session.sage  # Session manager
-│   ├── sync/engine.sage  # Synchronization engine
-│   └── adapters/
-│       ├── gdb_mi.sage   # GDB/MI adapter (TCP)
-│       └── openocd.sage  # OpenOCD adapter (TCP)
-├── lib/
-│   ├── log.sage          # Level-based logger
-│   └── json.sage         # Self-contained JSON parser/serializer
-├── tools/
-│   ├── bundle.py         # Module bundler
-│   └── deploy.py         # Cross-deploy C launcher generator
-├── tests/
-│   └── run_all.sage      # 33 tests
-├── build/                # Built binaries
-├── deps/SageLang/        # SageLang v4.0.8 source
-└── docs/                 # Component documentation (11 files)
-```
+![JanusDBG Project Structure](assets/graphic01.png)
 
 ---
 
