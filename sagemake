@@ -36,7 +36,9 @@ YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
 ROOT = Path(__file__).resolve().parent
-SAGE = ROOT / "deps" / "SageLang" / "sage"
+_SAGE_DEPS = ROOT / "deps" / "SageLang" / "sage"
+_SAGE_SYSTEM = shutil.which("sage")
+SAGE = Path(_SAGE_SYSTEM) if _SAGE_SYSTEM else _SAGE_DEPS
 SRC_DIR = ROOT / "src"
 LIB_DIR = ROOT / "lib"
 TEST_DIR = ROOT / "tests"
