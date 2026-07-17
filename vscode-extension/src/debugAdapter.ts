@@ -13,10 +13,50 @@ export class DebugAdapter implements vscode.DebugAdapter {
         this.outputChannel = outputChannel;
     }
 
-    public onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> | undefined;
+    private _sendMessage = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
+    public readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this._sendMessage.event;
 
     public handleMessage(message: vscode.DebugProtocolMessage): void {
         this.outputChannel.appendLine(`[dap] received: ${JSON.stringify(message, null, 2)}`);
+        if (message.type === 'request') {
+            const request = message as import('vscode-debugprotocol').DebugProtocol.Request;
+            const response: import('vscode-debugprotocol').DebugProtocol.Response = {
+                type: 'response',
+                seq: 0,
+                request_seq: request.seq,
+                success: true,
+                command: request.command
+            };
+            if (request.command === 'initialize') {
+                response.body = {
+                    supportsConfigurationDoneRequest: true,
+                };
+                this._sendMessage.fire(response);
+                this._sendMessage.fire({
+                    type: 'event',
+                    event: 'initialized',
+                    seq: 0
+                });
+            } else if (request.command === 'launch' || request.command === 'attach') {
+                this.startBackend();
+                this._sendMessage.fire(response);
+            } else if (request.command === 'configurationDone') {
+                this._sendMessage.fire(response);
+            } else if (request.command === 'threads') {
+                response.body = {
+                    threads: [
+                        { id: 1, name: "ARM Cortex-A" },
+                        { id: 2, name: "RISC-V" }
+                    ]
+                };
+                this._sendMessage.fire(response);
+            } else if (request.command === 'disconnect') {
+                this.stopBackend();
+                this._sendMessage.fire(response);
+            } else {
+                this._sendMessage.fire(response); // Auto-ack other requests
+            }
+        }
     }
 
     public async startBackend(): Promise<void> {

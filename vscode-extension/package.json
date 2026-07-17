@@ -36,6 +36,10 @@
       {
         "command": "janusdbg.recordTimeline",
         "title": "JanusDBG: Record Timeline"
+      },
+      {
+        "command": "janusdbg.showFlameGraph",
+        "title": "JanusDBG: Show Flame Graph"
       }
     ],
     "debuggers": [

@@ -59,6 +59,17 @@ Set a hardware breakpoint at the same address on multiple sessions.
 
 Tracks the breakpoint in `engine["breakpoints"][addr]` for future management. Calls `adapter.set_breakpoint(addr)` for each session.
 
+### `sync_poll(engine, session_names: Array)`
+
+Poll multiple sessions for execution state changes, acting as the foundation for the "Stop Both" policy.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `engine` | dict | Sync engine |
+| `session_names` | Array | List of session names |
+
+**Note**: Currently acts as a structural placeholder. True cross-core asynchronous halts require non-blocking I/O primitives which will be utilized here in future releases.
+
 ### `sync_get_merged_state(engine, session_names: Array) -> dict`
 
 Get merged register state from multiple sessions.

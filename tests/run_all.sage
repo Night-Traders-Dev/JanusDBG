@@ -661,5 +661,73 @@ proc test_timeline_clear():
 
 add_test(suite, "timeline: clear", test_timeline_clear)
 
+## --- flamegraph tests ---
+proc test_flamegraph_create():
+    from src.profiler.flamegraph import create_flamegraph_builder
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let builder = create_flamegraph_builder(logger)
+    assert_not_equal(builder, nil, "builder should not be nil")
+    assert_equal(builder["nodes"], {}, "nodes should start empty")
+
+add_test(suite, "flamegraph: create builder", test_flamegraph_create)
+
+proc test_flamegraph_add_trace():
+    from src.profiler.flamegraph import create_flamegraph_builder, add_trace, generate_json
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let builder = create_flamegraph_builder(logger)
+    add_trace(builder, ["main", "foo"], 10)
+    add_trace(builder, ["main", "bar"], 5)
+    let json = generate_json(builder)
+    assert_equal(json["name"], "root", "root name")
+    assert_equal(json["value"], 0, "root value")
+    let children = json["children"]
+    assert_equal(len(children), 1, "should have 1 main child")
+    let main = children[0]
+    assert_equal(main["name"], "main", "main name")
+    assert_equal(main["value"], 15, "main total value")
+    assert_equal(len(main["children"]), 2, "main should have 2 children")
+
+add_test(suite, "flamegraph: add trace and generate json", test_flamegraph_add_trace)
+
+## --- openocd trace tests ---
+proc test_openocd_trace_methods_raise_not_connected():
+    from src.adapters.openocd import OpenOCDAdapter
+    from lib.log import create_logger
+    let logger = create_logger("test", 1)
+    let ocd = OpenOCDAdapter("localhost", 3333, logger)
+    let start_ok = false
+    try:
+        ocd.start_trace()
+    catch e:
+        if e == "OpenOCD not connected":
+            start_ok = true
+    assert_true(start_ok, "start_trace should raise 'OpenOCD not connected'")
+    
+    let stop_ok = false
+    try:
+        ocd.stop_trace()
+    catch e:
+        if e == "OpenOCD not connected":
+            stop_ok = true
+    assert_true(stop_ok, "stop_trace should raise 'OpenOCD not connected'")
+
+add_test(suite, "openocd: trace methods raise when not connected", test_openocd_trace_methods_raise_not_connected)
+
+## --- sync poll test ---
+proc test_sync_poll():
+    from lib.log import create_logger
+    from src.session.session import create_session_manager, sm_register
+    from src.sync.engine import create_sync_engine, sync_poll
+    let logger = create_logger("test", 1)
+    let sm = create_session_manager(logger)
+    sm_register(sm, "arm", "localhost:1", "gdb_mi")
+    let engine = create_sync_engine(sm, logger)
+    let result = sync_poll(engine, ["arm"])
+    assert_equal(result, true, "sync_poll should return true placeholder")
+
+add_test(suite, "sync: poll placeholder", test_sync_poll)
+
 run(suite)
 report(suite)

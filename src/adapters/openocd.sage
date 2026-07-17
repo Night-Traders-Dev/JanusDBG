@@ -55,3 +55,17 @@ class OpenOCDAdapter:
     ## Read a register value by name.
     proc read_reg(self, reg: String):
         return self.send_tcl("reg " + reg)
+
+    ## Start collecting trace data or performance counters.
+    proc start_trace(self):
+        info(self.logger, "Starting trace collection")
+        return self.send_tcl("trace start")
+
+    ## Stop trace collection.
+    proc stop_trace(self):
+        info(self.logger, "Stopping trace collection")
+        return self.send_tcl("trace stop")
+
+    ## Poll the accumulated trace data to feed into timeline/flamegraph builders.
+    proc poll_trace(self):
+        return self.send_tcl("trace status")

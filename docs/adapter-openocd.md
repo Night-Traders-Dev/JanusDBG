@@ -57,6 +57,9 @@ Each method delegates to `send_tcl` with the appropriate command:
 | `step()` | `step` | Single-step the target |
 | `set_breakpoint(addr)` | `bp <addr> 2 hw` | Set hardware breakpoint |
 | `read_reg(reg)` | `reg <reg>` | Read register by name |
+| `start_trace()` | `trace start` | Start trace collection |
+| `stop_trace()` | `trace stop` | Stop trace collection |
+| `poll_trace()` | `trace status` | Poll trace data |
 
 The `"2 hw"` suffix in `set_breakpoint` specifies a hardware breakpoint of length 2 (Word), standard for RISC-V.
 

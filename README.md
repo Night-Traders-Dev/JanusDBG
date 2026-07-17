@@ -30,8 +30,8 @@ JanusDBG is a lightweight backend daemon that bridges JSON-RPC 2.0 requests to G
 | Feature | Status | Description |
 |---------|--------|-------------|
 | **VS Code Extension** | ✅ | Extension with debug adapter, build + install via sagemake |
-| **Performance Timeline** | 📋 | Merged execution events from both cores |
-| **Profiling Aggregator** | 📋 | Flame graphs from hardware counters |
+| **Performance Timeline** | ✅ | Merged execution events from both cores (recorder added) |
+| **Profiling Aggregator** | ✅ | Flame graphs trace aggregation builder |
 | **Embedded REPL** | 📋 | SageLang REPL for custom trace scripts |
 
 ---

@@ -51,3 +51,24 @@ proc sync_get_merged_state(engine, session_names: Array):
         let merge_adapter = sm_get_adapter(merge_sm, name)
         state[name] = merge_adapter.read_registers()
     return state
+
+## Poll the sessions to implement 'Stop Both' policy.
+## NOTE: This requires non-blocking I/O or `std.channel` to be fully robust,
+## as currently `recvline` in adapters blocks until a response is received.
+## When async I/O is available, this will loop and wait for any breakpoint hit.
+proc sync_poll(engine, session_names: Array):
+    # Check if any session hit a breakpoint
+    # If one did, halt the others
+    let sm = engine["session_mgr"]
+    let hit_core = ""
+    
+    # In a real implementation with async I/O, we would select() or poll()
+    # the sockets here. For now this serves as the structural placeholder.
+    
+    # if hit_core != "":
+    #     info(engine["logger"], "Cross-core break triggered by " + hit_core)
+    #     for name in session_names:
+    #         if name != hit_core:
+    #             let adapter = sm_get_adapter(sm, name)
+    #             adapter.halt()
+    return true
