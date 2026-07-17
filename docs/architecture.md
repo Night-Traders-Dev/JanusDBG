@@ -6,94 +6,11 @@ JanusDBG is a lightweight, dual-target debugger backend that bridges JSON-RPC 2.
 
 ## High-Level Design
 
-```
-┌──────────────┐   JSON-RPC 2.0     ┌────────────────────────────────────┐
-│  RPC Client  │ ──────────────────▶ │  JanusDBG Backend                  │
-│ (IDE/Plugin)  │ ◀────────────────── │  ┌──────────────────────────────┐ │
-└──────────────┘    TCP :8179        │  │  main.sage (entry)           │ │
-                                      │  │  - argparse                  │ │
-                                      │  │  - create logger             │ │
-                                      │  │  - create session mgr        │ │
-                                      │  │  - register sessions         │ │
-                                      │  │  - start RPC server          │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                       │  │  rpc/server.sage             │ │
-                                       │  │  - TCP JSON-RPC 2.0          │ │
-                                       │  │  - method dispatch           │ │
-                                       │  │  - batch support             │ │
-                                       │  │  - try/catch error handling  │ │
-                                       │  │  - sync method routing       │ │
-                                       │  └──────────────────────────────┘ │
-                                       │                                    │
-                                       │  ┌──────────────────────────────┐ │
-                                       │  │  sync/engine.sage            │ │
-                                       │  │  - cross-session coordination│ │
-                                       │  │  - sequential multi-session  │ │
-                                       │  │  - breakpoint tracking       │ │
-                                       │  │  - merged state collection   │ │
-                                       │  └──────────────────────────────┘ │
-                                       │                                    │
-                                       │  ┌──────────────────────────────┐ │
-                                       │  │  session/session.sage        │ │
-                                      │  │  - session lifecycle         │ │
-                                      │  │  - adapter creation & mgmt   │ │
-                                      │  │  - register/connect/disconnect│ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  adapters/gdb_mi.sage        │ │
-                                      │  │  - ARM GDB/MI via TCP        │ │
-                                      │  │  - (gdb) prompt detection     │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  adapters/openocd.sage       │ │
-                                      │  │  - RISC-V OpenOCD via TCP    │ │
-                                      │  │  - raw Tcl command protocol   │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  lib/log.sage                │ │
-                                      │  │  - level-based logger        │ │
-                                      │  └──────────────────────────────┘ │
-                                      │                                    │
-                                      │  ┌──────────────────────────────┐ │
-                                      │  │  lib/json.sage               │ │
-                                      │  │  - self-contained JSON       │ │
-                                      │  └──────────────────────────────┘ │
-                                      └────────────────────────────────────┘
-```
+![JanusDBG High-Level Design](../assets/graphic02.png)
 
 ## Module Dependency Graph
 
-```
-  main.sage
-   ├── std.argparse
-   ├── sys
-   ├── lib/log.sage
-    ├── src/rpc/server.sage
-    │    ├── tcp (native module)
-    │    ├── lib/json.sage
-    │    ├── lib/log.sage
-    │    ├── src/session/session.sage
-    │    │    ├── lib/log.sage
-    │    │    └── src/adapters/gdb_mi.sage  (conditional, on connect)
-    │    │    │    ├── tcp (native module)
-    │    │    │    └── lib/log.sage
-    │    │    └── src/adapters/openocd.sage (conditional, on connect)
-    │    │         ├── tcp (native module)
-    │    │         └── lib/log.sage
-    │    └── src/sync/engine.sage
-    │         ├── lib/log.sage
-    │         └── src/session/session.sage
-    ├── src/session/session.sage
-    │    └── lib/log.sage
-    └── src/sync/engine.sage
-         ├── lib/log.sage
-         └── src/session/session.sage
-```
+![JanusDBG Modual Dependency Graph](../assets/graphic03.png)
 
 No circular dependencies. Each module imports only what it needs.
 
@@ -131,43 +48,7 @@ The project uses two layers of build orchestration:
 
 ## Repository Structure
 
-```
-JanusDBG/
-├── Makefile             # Make wrapper
-├── sagemake             # Build orchestrator (SageLang)
-├── README.md            # Project documentation
-├── src/
-│   ├── main.sage        # Entry point
-│   ├── rpc/server.sage  # JSON-RPC server
-│   ├── session/session.sage  # Session manager
-│   ├── sync/engine.sage  # Synchronization engine
-│   └── adapters/
-│       ├── gdb_mi.sage  # ARM GDB/MI adapter (TCP)
-│       └── openocd.sage # RISC-V OpenOCD adapter (TCP)
-├── lib/
-│   ├── log.sage         # Logger
-│   └── json.sage        # JSON parser/serializer
-├── tools/
-│   ├── bundle.py         # Module bundler
-│   └── deploy.py         # Cross-deploy tool
-├── tests/
-│   └── run_all.sage     # Test suite (33 tests)
-├── deps/
-│   └── SageLang/        # SageLang v4.0.8 source
-└── docs/                 # Component documentation
-    ├── architecture.md
-    ├── main.md
-    ├── lib-log.md
-    ├── lib-json.md
-    ├── session-manager.md
-    ├── rpc-server.md
-    ├── adapter-gdb-mi.md
-    ├── adapter-openocd.md
-    ├── sync-engine.md
-    ├── test-suite.md
-    ├── build-system.md
-    └── deployment.md
-```
+![JanusDBG Repository Structure](../assets/graphic04.png)
 
 ## Design Constraints
 
